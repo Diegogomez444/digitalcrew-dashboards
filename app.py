@@ -6,11 +6,16 @@ import numpy as np
 from datetime import date, timedelta, datetime
 
 # ── CONFIG ─────────────────────────────────────────────────────────────────────
-# Lee desde secrets de Streamlit Cloud; si no existen usa los valores por defecto
-SHEET_ID    = st.secrets.get("SHEET_ID",    "1KszbEw3CX5jWtWxqE_Oy7Bi17IA5ZJr6FfOkCRJ4zH4")
-GID_GENERAL = st.secrets.get("GID_GENERAL", "0")
-GID_TG      = st.secrets.get("GID_TG",      "859239310")
-CLIENTE     = st.secrets.get("CLIENTE",     "La Fiera Analista")
+try:
+    SHEET_ID    = st.secrets.get("SHEET_ID",    "1KszbEw3CX5jWtWxqE_Oy7Bi17IA5ZJr6FfOkCRJ4zH4")
+    GID_GENERAL = st.secrets.get("GID_GENERAL", "0")
+    GID_TG      = st.secrets.get("GID_TG",      "859239310")
+    CLIENTE     = st.secrets.get("CLIENTE",     "La Fiera Analista")
+except Exception:
+    SHEET_ID    = "1KszbEw3CX5jWtWxqE_Oy7Bi17IA5ZJr6FfOkCRJ4zH4"
+    GID_GENERAL = "0"
+    GID_TG      = "859239310"
+    CLIENTE     = "La Fiera Analista"
 
 # ── PALETTE ────────────────────────────────────────────────────────────────────
 BG       = "#0B0F1A"
@@ -278,21 +283,26 @@ if "de" not in st.session_state: st.session_state.de = max_d
 
 st.markdown('<div class="slabel">Período de análisis</div>', unsafe_allow_html=True)
 
-b1,b2,b3,b4,b5 = st.columns(5)
-if b1.button("Últimos 3 días",  use_container_width=True):
-    st.session_state.ds = max_d - timedelta(days=2); st.session_state.de = max_d
-if b2.button("Últimos 7 días",  use_container_width=True):
-    st.session_state.ds = max_d - timedelta(days=6); st.session_state.de = max_d
-if b3.button("Últimos 15 días", use_container_width=True):
-    st.session_state.ds = max_d - timedelta(days=14); st.session_state.de = max_d
-if b4.button("Este mes",        use_container_width=True):
-    st.session_state.ds = date.today().replace(day=1); st.session_state.de = max_d
-if b5.button("Todo el período", use_container_width=True):
-    st.session_state.ds = min_d; st.session_state.de = max_d
+OPCIONES = {
+    "Últimos 3 días":  (max_d - timedelta(days=2),  max_d),
+    "Últimos 7 días":  (max_d - timedelta(days=6),  max_d),
+    "Últimos 15 días": (max_d - timedelta(days=14), max_d),
+    "Este mes":        (date.today().replace(day=1), max_d),
+    "Todo el período": (min_d, max_d),
+    "Rango personalizado": (st.session_state.ds, st.session_state.de),
+}
 
-dc1, dc2 = st.columns(2)
-d_start = dc1.date_input("Desde", value=st.session_state.ds, min_value=min_d, max_value=max_d)
-d_end   = dc2.date_input("Hasta", value=st.session_state.de, min_value=min_d, max_value=max_d)
+fc1, fc2, fc3 = st.columns([2, 2, 4])
+with fc1:
+    seleccion = st.selectbox("Período rápido", list(OPCIONES.keys()), index=4, label_visibility="collapsed")
+
+if seleccion != "Rango personalizado":
+    st.session_state.ds, st.session_state.de = OPCIONES[seleccion]
+
+with fc2:
+    d_start = st.date_input("Desde", value=st.session_state.ds, min_value=min_d, max_value=max_d, label_visibility="collapsed")
+with fc3:
+    d_end   = st.date_input("Hasta", value=st.session_state.de, min_value=min_d, max_value=max_d, label_visibility="collapsed")
 
 df  = df_all[(df_all["Fecha"].dt.date >= d_start) & (df_all["Fecha"].dt.date <= d_end)].copy()
 dfv = df[df["Gasto"].notna() & (df["Gasto"] > 0)].copy()
