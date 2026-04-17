@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 from datetime import date, timedelta, datetime
+import io
 
 # ── CONFIG ─────────────────────────────────────────────────────────────────────
 try:
@@ -18,21 +19,21 @@ except Exception:
     CLIENTE     = "La Fiera Analista"
 
 # ── PALETTE ────────────────────────────────────────────────────────────────────
-BG       = "#0B0F1A"
-CARD     = "#141929"
-CARD2    = "#1C2338"
-BORDER   = "#252D45"
-PURPLE   = "#7C3AED"
-PURPLEL  = "#A855F7"
-PINK     = "#EC4899"
-CYAN     = "#06B6D4"
-CYANL    = "#22D3EE"
-GREEN    = "#10B981"
-RED      = "#EF4444"
-AMBER    = "#F59E0B"
-WHITE    = "#FFFFFF"
-MUTED    = "#94A3B8"
-MUTED2   = "#374151"
+BG      = "#0B0F1A"
+CARD    = "#141929"
+CARD2   = "#1C2338"
+BORDER  = "#252D45"
+PURPLE  = "#7C3AED"
+PURPLEL = "#A855F7"
+PINK    = "#EC4899"
+CYAN    = "#06B6D4"
+CYANL   = "#22D3EE"
+GREEN   = "#10B981"
+RED     = "#EF4444"
+AMBER   = "#F59E0B"
+WHITE   = "#FFFFFF"
+MUTED   = "#94A3B8"
+MUTED2  = "#374151"
 
 # ── HELPERS ────────────────────────────────────────────────────────────────────
 def parse_cop(val):
@@ -73,16 +74,62 @@ def fmt_num(v):
     if v is None or (isinstance(v, float) and np.isnan(v)): return "—"
     return f"{int(v):,}".replace(",",".")
 
-def fetch_csv(gid):
-    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}"
-    return pd.read_csv(url, header=None, dtype=str, keep_default_na=False)
+def kcard(label, value, style="plain", color="", sub="", delta=""):
+    s = f"<div class='kc-sub'>{sub}</div>" if sub else ""
+    d = f"<div style='margin-top:.3rem'>{delta}</div>" if delta else ""
+    return f"<div class='kc kc-{style}'><div class='kc-lbl'>{label}</div><div class='kc-val {color}'>{value}</div>{s}{d}</div>"
+
+def indicator_card(label, value, display, pct, color, ref_labels):
+    bar = f"<div style='background:{MUTED2};border-radius:999px;height:8px;overflow:hidden;margin:.5rem 0'><div style='height:100%;width:{min(pct,100):.0f}%;background:{color};border-radius:999px'></div></div>"
+    refs = f"<div style='font-size:.58rem;color:{MUTED};margin-top:.3rem'>{ref_labels}</div>"
+    return f"<div class='kc kc-plain'><div class='kc-lbl'>{label}</div><div class='kc-val' style='color:{color};font-size:1.6rem'>{display}</div>{bar}{refs}</div>"
 
 def delta_pct(current, prev):
     if prev and prev != 0:
         return (current - prev) / abs(prev) * 100
     return None
 
+# ── META ADS HELPERS ───────────────────────────────────────────────────────────
+META_COL = {
+    "spend":       ["importe gastado (cop)","importe gastado","amount spent (cop)","amount spent","gasto"],
+    "results":     ["resultados","results"],
+    "cpr":         ["costo por resultado","cost per result"],
+    "impressions": ["impresiones","impressions"],
+    "clicks":      ["clics en el enlace","link clicks","clics (todos)","clics","clicks"],
+    "ctr":         ["ctr (tasa de clics en el enlace)","ctr (link click-through rate)","ctr"],
+    "reach":       ["alcance","reach"],
+    "frequency":   ["frecuencia","frequency"],
+    "campaign":    ["nombre de la campaña","campaign name"],
+    "adset":       ["nombre del conjunto de anuncios","ad set name"],
+    "ad":          ["nombre del anuncio","ad name"],
+}
+SKIP_VALS = {"","nan","total de la cuenta","totales","total","reporting ends","informe terminado"}
+
+def find_col(df, key):
+    aliases = META_COL.get(key, [])
+    for col in df.columns:
+        if col.strip().lower() in aliases:
+            return col
+    return None
+
+def parse_meta_num(val):
+    if pd.isna(val): return np.nan
+    s = str(val).replace("$","").replace(" ","").strip()
+    if s in ["","nan","-","N/A"]: return np.nan
+    if "," in s and "." in s:
+        s = s.replace(".","").replace(",",".")
+    elif "," in s:
+        s = s.replace(",",".")
+    else:
+        s = s.replace(".","")
+    try: return float(s)
+    except: return np.nan
+
 # ── DATA LOADERS ───────────────────────────────────────────────────────────────
+def fetch_csv(gid):
+    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}"
+    return pd.read_csv(url, header=None, dtype=str, keep_default_na=False)
+
 @st.cache_data(ttl=300)
 def load_summary():
     raw = fetch_csv(GID_GENERAL)
@@ -112,7 +159,7 @@ def load_summary():
                 except: pass
             if c == "Gasto Actual" and j+1 < len(row):
                 s["gasto_actual"] = str(row.iloc[j+1])
-            if c == "P.Restante"   and j+1 < len(row) and "p_restante" not in s:
+            if c == "P.Restante" and j+1 < len(row) and "p_restante" not in s:
                 v = str(row.iloc[j+1]).strip()
                 if "$" in v: s["p_restante"] = v
     return s
@@ -156,7 +203,7 @@ section[data-testid="stSidebar"]{{display:none;}}
 
 /* ── Header ── */
 .hdr{{display:flex;justify-content:space-between;align-items:center;
-  padding:0 0 1.4rem 0;border-bottom:1px solid {BORDER};margin-bottom:1.6rem;}}
+  padding:0 0 1.4rem 0;border-bottom:1px solid {BORDER};margin-bottom:1.2rem;}}
 .hdr-logo{{font-size:1.6rem;font-weight:900;letter-spacing:.2em;text-transform:uppercase;
   background:linear-gradient(90deg,{PURPLEL},{CYANL});-webkit-background-clip:text;
   -webkit-text-fill-color:transparent;background-clip:text;}}
@@ -207,7 +254,7 @@ section[data-testid="stSidebar"]{{display:none;}}
 .prog-stats{{display:flex;justify-content:space-between;margin-top:.7rem;}}
 .ps{{font-size:.7rem;}} .ps span{{color:{MUTED};}} .ps strong{{color:{WHITE};}}
 
-/* ── Filter buttons ── */
+/* ── Buttons ── */
 .stButton>button{{
   background:{CARD}!important;border:1px solid {BORDER}!important;
   color:{MUTED}!important;border-radius:9px!important;
@@ -228,19 +275,25 @@ label[data-testid="stWidgetLabel"] p{{
   color:{MUTED}!important;font-size:.62rem!important;
   font-weight:600;letter-spacing:.14em;text-transform:uppercase;}}
 
-/* ── Tabs ── */
+/* ── Main tabs (páginas) ── */
 .stTabs [data-baseweb="tab-list"]{{
-  background:{CARD};border-radius:11px;padding:4px;gap:3px;border:1px solid {BORDER};}}
+  background:{CARD};border-radius:12px;padding:5px;gap:4px;border:1px solid {BORDER};
+  margin-bottom:1rem;}}
 .stTabs [data-baseweb="tab"]{{
-  color:{MUTED};background:transparent;border-radius:8px;
-  font-size:.76rem;font-weight:500;padding:.35rem 1rem;}}
+  color:{MUTED};background:transparent;border-radius:9px;
+  font-size:.82rem;font-weight:500;padding:.45rem 1.4rem;}}
 .stTabs [aria-selected="true"]{{
   background:linear-gradient(135deg,{PURPLE},{CYAN})!important;
   color:#fff!important;font-weight:700!important;
-  box-shadow:0 2px 12px rgba(124,58,237,.4)!important;}}
+  box-shadow:0 2px 14px rgba(124,58,237,.45)!important;}}
 
 /* ── DataFrame ── */
 [data-testid="stDataFrame"]{{border:1px solid {BORDER};border-radius:14px;overflow:hidden;}}
+
+/* ── File uploader ── */
+[data-testid="stFileUploader"]{{
+  background:{CARD};border:2px dashed {BORDER};border-radius:14px;padding:1rem;}}
+[data-testid="stFileUploader"]:hover{{border-color:{PURPLEL};}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -252,7 +305,7 @@ if df_all is None:
     st.error("No se pudieron cargar los datos. Verifica que el Sheet sea público.")
     st.stop()
 
-# ── HEADER ─────────────────────────────────────────────────────────────────────
+# ── HEADER (siempre visible) ───────────────────────────────────────────────────
 c_hdr, c_btn = st.columns([8, 1])
 with c_hdr:
     st.markdown(f"""
@@ -274,85 +327,93 @@ with c_btn:
         st.cache_data.clear()
         st.rerun()
 
-# ── DATE FILTERS ───────────────────────────────────────────────────────────────
-min_d = df_all["Fecha"].dt.date.min()
-max_d = df_all["Fecha"].dt.date.max()
+# ── PESTAÑAS PRINCIPALES ───────────────────────────────────────────────────────
+pg1, pg2, pg3 = st.tabs(["📋  Reporte", "📘  Meta Ads", "📲  Telegram"])
 
-if "ds" not in st.session_state: st.session_state.ds = min_d
-if "de" not in st.session_state: st.session_state.de = max_d
+# ══════════════════════════════════════════════════════════════════════════════
+# PESTAÑA 1 — REPORTE
+# ══════════════════════════════════════════════════════════════════════════════
+with pg1:
 
-st.markdown('<div class="slabel">Período de análisis</div>', unsafe_allow_html=True)
+    # ── FILTRO DE FECHAS ───────────────────────────────────────────────────────
+    min_d = df_all["Fecha"].dt.date.min()
+    max_d = df_all["Fecha"].dt.date.max()
 
-OPCIONES = {
-    "Últimos 3 días":  (max_d - timedelta(days=2),  max_d),
-    "Últimos 7 días":  (max_d - timedelta(days=6),  max_d),
-    "Últimos 15 días": (max_d - timedelta(days=14), max_d),
-    "Este mes":        (date.today().replace(day=1), max_d),
-    "Todo el período": (min_d, max_d),
-    "Rango personalizado": (st.session_state.ds, st.session_state.de),
-}
+    if "ds" not in st.session_state: st.session_state.ds = min_d
+    if "de" not in st.session_state: st.session_state.de = max_d
 
-fc1, fc2, fc3 = st.columns([2, 2, 4])
-with fc1:
-    seleccion = st.selectbox("Período rápido", list(OPCIONES.keys()), index=4, label_visibility="collapsed")
+    ayer = date.today() - timedelta(days=1)
+    OPCIONES = {
+        "Todo el período":     (min_d, max_d),
+        "Ayer":                (ayer, ayer),
+        "Últimos 3 días":      (max_d - timedelta(days=2), max_d),
+        "Últimos 7 días":      (max_d - timedelta(days=6), max_d),
+        "Últimos 15 días":     (max_d - timedelta(days=14), max_d),
+        "Este mes":            (date.today().replace(day=1), max_d),
+        "Rango personalizado": (st.session_state.ds, st.session_state.de),
+    }
 
-if seleccion != "Rango personalizado":
-    st.session_state.ds, st.session_state.de = OPCIONES[seleccion]
+    _, fil_col = st.columns([7, 2])
+    with fil_col:
+        seleccion = st.selectbox("Período", list(OPCIONES.keys()), index=0,
+                                 label_visibility="collapsed")
 
-with fc2:
-    d_start = st.date_input("Desde", value=st.session_state.ds, min_value=min_d, max_value=max_d, label_visibility="collapsed")
-with fc3:
-    d_end   = st.date_input("Hasta", value=st.session_state.de, min_value=min_d, max_value=max_d, label_visibility="collapsed")
+    if seleccion != "Rango personalizado":
+        d_start, d_end = OPCIONES[seleccion]
+        st.session_state.ds, st.session_state.de = d_start, d_end
+    else:
+        cr1, cr2 = st.columns(2)
+        with cr1:
+            d_start = st.date_input("Desde", value=st.session_state.ds,
+                                    min_value=min_d, max_value=max_d)
+        with cr2:
+            d_end = st.date_input("Hasta", value=st.session_state.de,
+                                  min_value=min_d, max_value=max_d)
+        st.session_state.ds, st.session_state.de = d_start, d_end
 
-df  = df_all[(df_all["Fecha"].dt.date >= d_start) & (df_all["Fecha"].dt.date <= d_end)].copy()
-dfv = df[df["Gasto"].notna() & (df["Gasto"] > 0)].copy()
+    df  = df_all[(df_all["Fecha"].dt.date >= d_start) & (df_all["Fecha"].dt.date <= d_end)].copy()
+    dfv = df[df["Gasto"].notna() & (df["Gasto"] > 0)].copy()
 
-# Delta helper (last 3 days vs prev 3 days)
-def get_delta(col):
-    valid = df_all[df_all[col].notna() & (df_all[col] > 0)] if col == "Gasto" else df_all[df_all[col].notna()]
-    if len(valid) < 6: return None
-    last3 = valid.tail(3)[col].mean()
-    prev3 = valid.iloc[-6:-3][col].mean()
-    return delta_pct(last3, prev3)
+    def get_delta(col):
+        valid = df_all[df_all[col].notna() & (df_all[col] > 0)] if col == "Gasto" else df_all[df_all[col].notna()]
+        if len(valid) < 6: return None
+        last3 = valid.tail(3)[col].mean()
+        prev3 = valid.iloc[-6:-3][col].mean()
+        return delta_pct(last3, prev3)
 
-def delta_html(val, inverse=False):
-    if val is None: return ""
-    good = val < 0 if inverse else val > 0
-    arrow = "▲" if val > 0 else "▼"
-    cls   = "kc-up" if good else "kc-dn"
-    return f'<span class="{cls}">{arrow} {abs(val):.1f}%</span>'
+    def delta_html(val, inverse=False):
+        if val is None: return ""
+        good  = val < 0 if inverse else val > 0
+        arrow = "▲" if val > 0 else "▼"
+        cls   = "kc-up" if good else "kc-dn"
+        return f'<span class="{cls}">{arrow} {abs(val):.1f}%</span>'
 
-# ── SECTION 1: PRESUPUESTO GENERAL ────────────────────────────────────────────
-st.markdown('<div class="slabel">Presupuesto del período</div>', unsafe_allow_html=True)
+    # ── PRESUPUESTO GENERAL ────────────────────────────────────────────────────
+    st.markdown('<div class="slabel">Presupuesto del período</div>', unsafe_allow_html=True)
 
-inv_pauta   = parse_cop(summ.get("inv_pauta","0"))
-inv_bot     = parse_cop(summ.get("inv_bot","0"))
-inv_total   = parse_cop(summ.get("inv_total","0"))
-cxr_obj     = parse_cop(summ.get("cxr_obj","0"))
-leads_p     = parse_num(summ.get("leads","0"))
-dias_p      = parse_num(summ.get("dias_pauta","31"))
-pdia        = parse_cop(summ.get("presup_dia","0"))
-gasto_act   = parse_cop(summ.get("gasto_actual","0"))
-p_rest      = parse_cop(summ.get("p_restante","0"))
+    inv_pauta = parse_cop(summ.get("inv_pauta","0"))
+    inv_bot   = parse_cop(summ.get("inv_bot","0"))
+    inv_total = parse_cop(summ.get("inv_total","0"))
+    cxr_obj   = parse_cop(summ.get("cxr_obj","0"))
+    leads_p   = parse_num(summ.get("leads","0"))
+    dias_p    = parse_num(summ.get("dias_pauta","31"))
+    pdia      = parse_cop(summ.get("presup_dia","0"))
+    gasto_act = parse_cop(summ.get("gasto_actual","0"))
+    p_rest    = parse_cop(summ.get("p_restante","0"))
 
-def kcard(label, value, style="plain", color="", sub="", delta=""):
-    s = f"<div class='kc-sub'>{sub}</div>" if sub else ""
-    d = f"<div style='margin-top:.3rem'>{delta}</div>" if delta else ""
-    return f"<div class='kc kc-{style}'><div class='kc-lbl'>{label}</div><div class='kc-val {color}'>{value}</div>{s}{d}</div>"
+    r1c1,r1c2,r1c3,r1c4,r1c5,r1c6,r1c7 = st.columns(7)
+    r1c1.markdown(kcard("Inv. Pauta",    fmt_cop(inv_pauta),  "plain"),      unsafe_allow_html=True)
+    r1c2.markdown(kcard("Inv. Bot",      fmt_cop(inv_bot),    "plain"),      unsafe_allow_html=True)
+    r1c3.markdown(kcard("Inv. Total",    fmt_cop(inv_total),  "pu","pu"),    unsafe_allow_html=True)
+    r1c4.markdown(kcard("CxR Obj. TG",  fmt_cop(cxr_obj),    "cy","cy"),    unsafe_allow_html=True)
+    r1c5.markdown(kcard("Leads presup.",fmt_num(leads_p),     "plain"),      unsafe_allow_html=True)
+    r1c6.markdown(kcard("Días en pauta",str(int(dias_p)) if dias_p else "—","plain"), unsafe_allow_html=True)
+    r1c7.markdown(kcard("Presup./Día",  fmt_cop(pdia),        "plain"),      unsafe_allow_html=True)
 
-r1c1,r1c2,r1c3,r1c4,r1c5,r1c6,r1c7 = st.columns(7)
-r1c1.markdown(kcard("Inv. Pauta",   fmt_cop(inv_pauta),  "plain"), unsafe_allow_html=True)
-r1c2.markdown(kcard("Inv. Bot",     fmt_cop(inv_bot),    "plain"), unsafe_allow_html=True)
-r1c3.markdown(kcard("Inv. Total",   fmt_cop(inv_total),  "pu","pu"), unsafe_allow_html=True)
-r1c4.markdown(kcard("CxR Obj. TG",  fmt_cop(cxr_obj),   "cy","cy"), unsafe_allow_html=True)
-r1c5.markdown(kcard("Leads presup.",fmt_num(leads_p),    "plain"), unsafe_allow_html=True)
-r1c6.markdown(kcard("Días en pauta",str(int(dias_p)) if dias_p else "—","plain"), unsafe_allow_html=True)
-r1c7.markdown(kcard("Presup./Día",  fmt_cop(pdia),       "plain"), unsafe_allow_html=True)
+    st.markdown("<div style='height:.8rem'></div>", unsafe_allow_html=True)
 
-st.markdown("<div style='height:.8rem'></div>", unsafe_allow_html=True)
-
-pct = min((gasto_act / inv_pauta * 100) if inv_pauta else 0, 100)
-st.markdown(f"""
+    pct = min((gasto_act / inv_pauta * 100) if inv_pauta else 0, 100)
+    st.markdown(f"""
 <div class="prog-wrap">
   <div class="prog-row">
     <span class="prog-title">Ejecución de presupuesto de pauta</span>
@@ -367,307 +428,492 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ── SECTION 2: MÉTRICAS DEL PERÍODO ───────────────────────────────────────────
-st.markdown('<div class="slabel">Métricas del período seleccionado</div>', unsafe_allow_html=True)
+    # ── MÉTRICAS DEL PERÍODO ───────────────────────────────────────────────────
+    st.markdown('<div class="slabel">Métricas del período seleccionado</div>', unsafe_allow_html=True)
 
-def safe_sum(col): return dfv[col].sum() if col in dfv.columns else 0
-def safe_mean(col): return dfv[col].mean() if col in dfv.columns and dfv[col].notna().any() else 0
+    def safe_sum(col): return dfv[col].sum() if col in dfv.columns else 0
+    def safe_mean(col): return dfv[col].mean() if col in dfv.columns and dfv[col].notna().any() else 0
 
-t_gasto   = safe_sum("Gasto")
-t_result  = safe_sum("Resultado")
-avg_cxrfb = safe_mean("CxResultado FB")
-avg_cxrtg = safe_mean("CxResultado+ TG")
-t_impr    = safe_sum("Impresiones")
-t_clics   = safe_sum("Clics")
-avg_ctr   = safe_mean("CTR")
-avg_cxclic= safe_mean("CxClic")
-t_tg      = safe_sum("TG Tracking")
-avg_cw    = safe_mean("Conv Web")
-avg_cargw = safe_mean("Cargar Web")
+    t_gasto    = safe_sum("Gasto")
+    t_result   = safe_sum("Resultado")
+    avg_cxrfb  = t_gasto / t_result if t_result > 0 else np.nan
+    avg_cxrtg  = (t_gasto + safe_sum("TG Tracking")) / t_result if t_result > 0 else np.nan
+    t_impr     = safe_sum("Impresiones")
+    t_clics    = safe_sum("Clics")
+    avg_ctr    = (t_clics / t_impr * 100) if t_impr > 0 else np.nan
+    avg_cxclic = t_gasto / t_clics if t_clics > 0 else np.nan
+    t_tg       = safe_sum("TG Tracking")
+    t_visitas  = safe_sum("Visitas Pag")
+    avg_cargw  = (t_visitas / t_clics * 100) if t_clics > 0 else np.nan
+    avg_cw     = (t_result / t_clics * 100) if t_clics > 0 else np.nan
 
-m1,m2,m3,m4,m5 = st.columns(5)
-m1.markdown(kcard("Gasto total",      fmt_cop(t_gasto),   "pu","pu",
-    delta=delta_html(get_delta("Gasto"))), unsafe_allow_html=True)
-m2.markdown(kcard("Resultados",       fmt_num(t_result),  "cy","cy",
-    delta=delta_html(get_delta("Resultado"))), unsafe_allow_html=True)
-m3.markdown(kcard("CxResultado FB",   fmt_cop(avg_cxrfb), "plain","",
-    delta=delta_html(get_delta("CxResultado FB"), inverse=True)), unsafe_allow_html=True)
-m4.markdown(kcard("CxResultado + TG", fmt_cop(avg_cxrtg), "plain","",
-    delta=delta_html(get_delta("CxResultado+ TG"), inverse=True)), unsafe_allow_html=True)
-m5.markdown(kcard("TG Tracking",      fmt_cop(t_tg),      "pk","pk",
-    delta=delta_html(get_delta("TG Tracking"))), unsafe_allow_html=True)
+    m1,m2,m3,m4,m5 = st.columns(5)
+    m1.markdown(kcard("Gasto total",      fmt_cop(t_gasto),   "pu","pu",
+        delta=delta_html(get_delta("Gasto"))), unsafe_allow_html=True)
+    m2.markdown(kcard("Resultados",       fmt_num(t_result),  "cy","cy",
+        delta=delta_html(get_delta("Resultado"))), unsafe_allow_html=True)
+    m3.markdown(kcard("CxResultado FB",   fmt_cop(avg_cxrfb), "plain","",
+        delta=delta_html(get_delta("CxResultado FB"), inverse=True)), unsafe_allow_html=True)
+    m4.markdown(kcard("CxResultado + TG", fmt_cop(avg_cxrtg), "plain","",
+        delta=delta_html(get_delta("CxResultado+ TG"), inverse=True)), unsafe_allow_html=True)
+    m5.markdown(kcard("TG Tracking",      fmt_cop(t_tg),      "pk","pk",
+        delta=delta_html(get_delta("TG Tracking"))), unsafe_allow_html=True)
 
-st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
 
-m6,m7,m8,m9,m10 = st.columns(5)
-m6.markdown(kcard("Impresiones",    fmt_num(t_impr),    "plain"), unsafe_allow_html=True)
-m7.markdown(kcard("Clics totales",  fmt_num(t_clics),   "plain",
-    delta=delta_html(get_delta("Clics"))), unsafe_allow_html=True)
-m8.markdown(kcard("CTR promedio",   f"{avg_ctr:.2f}%",  "gn","gn",
-    delta=delta_html(get_delta("CTR"))), unsafe_allow_html=True)
-m9.markdown(kcard("CxClic prom.",   fmt_cop(avg_cxclic),"plain"), unsafe_allow_html=True)
-m10.markdown(kcard("Conv. Web",     f"{avg_cw:.2f}%",   "plain","",
-    sub=f"Cargar Web: {avg_cargw:.1f}%"), unsafe_allow_html=True)
+    m6,m7,m8,m9,m10 = st.columns(5)
+    m6.markdown(kcard("Impresiones",   fmt_num(t_impr),    "plain"), unsafe_allow_html=True)
+    m7.markdown(kcard("Clics totales", fmt_num(t_clics),   "plain",
+        delta=delta_html(get_delta("Clics"))), unsafe_allow_html=True)
+    m8.markdown(kcard("CTR promedio",  f"{avg_ctr:.2f}%",  "gn","gn",
+        delta=delta_html(get_delta("CTR"))), unsafe_allow_html=True)
+    m9.markdown(kcard("CxClic prom.",  fmt_cop(avg_cxclic),"plain"), unsafe_allow_html=True)
+    m10.markdown(kcard("Conv. Web",    f"{avg_cw:.2f}%",   "plain","",
+        sub=f"Cargar Web: {avg_cargw:.1f}%"), unsafe_allow_html=True)
 
-# ── SECTION 3: GAUGES ─────────────────────────────────────────────────────────
-st.markdown('<div class="slabel">Indicadores de rendimiento</div>', unsafe_allow_html=True)
+    # ── INDICADORES ───────────────────────────────────────────────────────────
+    st.markdown('<div class="slabel">Indicadores de rendimiento</div>', unsafe_allow_html=True)
 
-def safe_last(col):
-    if col not in dfv.columns or len(dfv[col].dropna()) == 0: return 0
-    v = dfv[col].dropna().iloc[-1]
-    return float(v) if not np.isnan(float(v)) else 0
+    def safe_last(col):
+        if col not in dfv.columns or len(dfv[col].dropna()) == 0: return 0
+        v = dfv[col].dropna().iloc[-1]
+        return float(v) if not np.isnan(float(v)) else 0
 
-def indicator_card(label, value, display, pct, color, ref_labels):
-    bar = f"<div style='background:{MUTED2};border-radius:999px;height:8px;overflow:hidden;margin:.5rem 0'><div style='height:100%;width:{min(pct,100):.0f}%;background:{color};border-radius:999px'></div></div>"
-    refs = f"<div style='font-size:.58rem;color:{MUTED};margin-top:.3rem'>{ref_labels}</div>"
-    return f"<div class='kc kc-plain'><div class='kc-lbl'>{label}</div><div class='kc-val' style='color:{color};font-size:1.6rem'>{display}</div>{bar}{refs}</div>"
+    def cxr_color(v):
+        if v < 750:  return GREEN
+        if v < 1125: return "#84CC16"
+        if v < 1500: return AMBER
+        if v < 1875: return "#F97316"
+        return RED
 
-last_cxr  = safe_last("CxResultado FB")
-last_ctr  = safe_last("CTR")
-last_cw   = safe_last("Conv Web")
-last_carw = safe_last("Cargar Web")
+    def cxr_tier(v):
+        if v < 750:  return "V1 Excelente"
+        if v < 1125: return "V2 Optimizar"
+        if v < 1500: return "V3 Objetivo ✓"
+        if v < 1875: return "V4 Alerta"
+        return "V5 Apagar"
 
-# CxResultado color por tier
-def cxr_color(v):
-    if v < 750:  return GREEN
-    if v < 1125: return "#84CC16"
-    if v < 1500: return AMBER
-    if v < 1875: return "#F97316"
-    return RED
+    last_cxr  = safe_last("CxResultado FB")
+    last_ctr  = safe_last("CTR")
+    last_cw   = safe_last("Conv Web")
+    last_carw = safe_last("Cargar Web")
 
-def cxr_tier(v):
-    if v < 750:  return "V1 Excelente"
-    if v < 1125: return "V2 Optimizar"
-    if v < 1500: return "V3 Objetivo ✓"
-    if v < 1875: return "V4 Alerta"
-    return "V5 Apagar"
+    g1,g2,g3,g4 = st.columns(4)
+    g1.markdown(indicator_card(
+        "CxResultado FB · Último día", last_cxr, fmt_cop(last_cxr),
+        (last_cxr / 2500) * 100, cxr_color(last_cxr),
+        f"{cxr_tier(last_cxr)} &nbsp;·&nbsp; Objetivo: $1.500 &nbsp;·&nbsp; Alerta: $1.875"
+    ), unsafe_allow_html=True)
+    g2.markdown(indicator_card(
+        "CTR · Último día", last_ctr, f"{last_ctr:.2f}%",
+        (last_ctr / 5) * 100, GREEN if last_ctr >= 2 else AMBER if last_ctr >= 1 else RED,
+        "Bajo &lt;1% &nbsp;·&nbsp; Normal 1–2% &nbsp;·&nbsp; Bueno &gt;2%"
+    ), unsafe_allow_html=True)
+    g3.markdown(indicator_card(
+        "Conv. Web · Último día", last_cw, f"{last_cw:.2f}%",
+        (last_cw / 50) * 100, GREEN if last_cw >= 25 else AMBER if last_cw >= 15 else RED,
+        "Bajo &lt;15% &nbsp;·&nbsp; Normal 15–25% &nbsp;·&nbsp; Bueno &gt;25%"
+    ), unsafe_allow_html=True)
+    g4.markdown(indicator_card(
+        "Cargar Web · Último día", last_carw, f"{last_carw:.2f}%",
+        last_carw, GREEN if last_carw >= 80 else AMBER if last_carw >= 70 else RED,
+        "Bajo &lt;70% &nbsp;·&nbsp; Normal 70–80% &nbsp;·&nbsp; Bueno &gt;80%"
+    ), unsafe_allow_html=True)
 
-g1,g2,g3,g4 = st.columns(4)
-g1.markdown(indicator_card(
-    "CxResultado FB · Último día", last_cxr, fmt_cop(last_cxr),
-    (last_cxr / 2500) * 100, cxr_color(last_cxr),
-    f"{cxr_tier(last_cxr)} &nbsp;·&nbsp; Objetivo: $1.500 &nbsp;·&nbsp; Alerta: $1.875"
-), unsafe_allow_html=True)
-g2.markdown(indicator_card(
-    "CTR · Último día", last_ctr, f"{last_ctr:.2f}%",
-    (last_ctr / 5) * 100, GREEN if last_ctr >= 2 else AMBER if last_ctr >= 1 else RED,
-    "Bajo &lt;1% &nbsp;·&nbsp; Normal 1–2% &nbsp;·&nbsp; Bueno &gt;2%"
-), unsafe_allow_html=True)
-g3.markdown(indicator_card(
-    "Conv. Web · Último día", last_cw, f"{last_cw:.2f}%",
-    (last_cw / 50) * 100, GREEN if last_cw >= 25 else AMBER if last_cw >= 15 else RED,
-    "Bajo &lt;15% &nbsp;·&nbsp; Normal 15–25% &nbsp;·&nbsp; Bueno &gt;25%"
-), unsafe_allow_html=True)
-g4.markdown(indicator_card(
-    "Cargar Web · Último día", last_carw, f"{last_carw:.2f}%",
-    last_carw, GREEN if last_carw >= 80 else AMBER if last_carw >= 70 else RED,
-    "Bajo &lt;70% &nbsp;·&nbsp; Normal 70–80% &nbsp;·&nbsp; Bueno &gt;80%"
-), unsafe_allow_html=True)
+    # ── GRÁFICAS ──────────────────────────────────────────────────────────────
+    st.markdown('<div class="slabel">Análisis visual</div>', unsafe_allow_html=True)
 
-# ── SECTION 4: CHARTS ──────────────────────────────────────────────────────────
-st.markdown('<div class="slabel">Análisis visual</div>', unsafe_allow_html=True)
+    BASE = dict(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(20,25,41,0.6)",
+        font=dict(family="Inter", color=MUTED, size=11),
+        margin=dict(l=10, r=10, t=70, b=10), height=360,
+        hovermode="x unified", hoverlabel=dict(bgcolor=CARD2, font_color=WHITE),
+        xaxis=dict(gridcolor=BORDER, showgrid=True, zeroline=False,
+                   tickfont=dict(color=MUTED, size=10)),
+        yaxis=dict(gridcolor=BORDER, showgrid=True, zeroline=False,
+                   tickfont=dict(color=MUTED, size=10)),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+                    font=dict(color=MUTED, size=10), bgcolor="rgba(0,0,0,0)")
+    )
 
-BASE = dict(
-    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor=f"rgba(20,25,41,0.6)",
-    font=dict(family="Inter", color=MUTED, size=11),
-    margin=dict(l=10, r=10, t=70, b=10), height=360,
-    hovermode="x unified", hoverlabel=dict(bgcolor=CARD2, font_color=WHITE),
-    xaxis=dict(gridcolor=BORDER, showgrid=True, zeroline=False,
-               tickfont=dict(color=MUTED, size=10)),
-    yaxis=dict(gridcolor=BORDER, showgrid=True, zeroline=False,
-               tickfont=dict(color=MUTED, size=10)),
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
-                font=dict(color=MUTED, size=10), bgcolor="rgba(0,0,0,0)")
-)
+    ct1, ct2, ct3, ct4, ct5 = st.tabs([
+        "📊 Gasto y Resultados", "💰 Costos", "📈 Tráfico y CTR",
+        "🎯 Ejecución vs Ideal", "📲 Telegram"
+    ])
 
-tab1,tab2,tab3,tab4,tab5 = st.tabs([
-    "📊 Gasto y Resultados","💰 Costos","📈 Tráfico y CTR",
-    "🎯 Ejecución vs Ideal","📲 Telegram"
-])
-
-with tab1:
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-    x = dfv["Fecha"]
-    # Area chart gasto
-    fig.add_trace(go.Scatter(
-        x=x, y=dfv["Gasto"], name="Gasto",
-        line=dict(color=PURPLEL, width=2.5),
-        fill="tozeroy", fillcolor="rgba(168,85,247,0.15)",
-        mode="lines", hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>Gasto</extra>"
-    ), secondary_y=False)
-    # Line resultados
-    if "Resultado" in dfv.columns:
+    with ct1:
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
         fig.add_trace(go.Scatter(
-            x=x, y=dfv["Resultado"], name="Resultados",
-            line=dict(color=CYANL, width=2.5),
-            mode="lines+markers", marker=dict(size=5, color=CYANL,
-            line=dict(color=BG, width=1.5)),
-            hovertemplate="%{x|%d/%m}<br><b>%{y}</b><extra>Resultados</extra>"
-        ), secondary_y=True)
-    fig.update_layout(**BASE, title=dict(text="Gasto Diario vs Resultados",
-        font=dict(color=WHITE, size=13, weight=700)))
-    fig.update_yaxes(title_text="Gasto (COP)", secondary_y=False,
-        gridcolor=BORDER, tickfont=dict(color=MUTED, size=10))
-    fig.update_yaxes(title_text="Resultados", secondary_y=True,
-        gridcolor=BORDER, tickfont=dict(color=MUTED, size=10))
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-
-with tab2:
-    fig = go.Figure()
-    if "CxResultado FB" in dfv.columns:
-        fig.add_trace(go.Scatter(
-            x=dfv["Fecha"], y=dfv["CxResultado FB"], name="CxResultado FB",
+            x=dfv["Fecha"], y=dfv["Gasto"], name="Gasto",
             line=dict(color=PURPLEL, width=2.5),
-            fill="tozeroy", fillcolor="rgba(168,85,247,0.1)",
-            mode="lines+markers", marker=dict(size=5, color=PURPLEL,
-            line=dict(color=BG, width=1.5)),
-            hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>CxR FB</extra>"
-        ))
-    if "CxResultado+ TG" in dfv.columns:
-        fig.add_trace(go.Scatter(
-            x=dfv["Fecha"], y=dfv["CxResultado+ TG"], name="CxResultado + TG",
-            line=dict(color=CYANL, width=2, dash="dot"),
-            mode="lines+markers", marker=dict(size=4, color=CYANL),
-            hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>CxR+TG</extra>"
-        ))
-    # V-tier reference lines
-    tiers = [(750,"V1 Excelente",GREEN),(1125,"V2 Optimizar","#84CC16"),
-             (1500,"V3 Objetivo",AMBER),(1875,"V4 Alerta","#F97316")]
-    for val,lbl,col in tiers:
-        fig.add_hline(y=val, line_dash="dash", line_color=col, opacity=0.5,
-            annotation_text=f"  {lbl}  ${val:,}", annotation_position="right",
-            annotation_font=dict(color=col, size=9))
-    fig.update_layout(**BASE, title=dict(text="Costo por Resultado · Referencias V1–V4",
-        font=dict(color=WHITE, size=13, weight=700)))
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            fill="tozeroy", fillcolor="rgba(168,85,247,0.15)",
+            mode="lines", hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>Gasto</extra>"
+        ), secondary_y=False)
+        if "Resultado" in dfv.columns:
+            fig.add_trace(go.Scatter(
+                x=dfv["Fecha"], y=dfv["Resultado"], name="Resultados",
+                line=dict(color=CYANL, width=2.5),
+                mode="lines+markers", marker=dict(size=5, color=CYANL, line=dict(color=BG, width=1.5)),
+                hovertemplate="%{x|%d/%m}<br><b>%{y}</b><extra>Resultados</extra>"
+            ), secondary_y=True)
+        fig.update_layout(**BASE, title=dict(text="Gasto Diario vs Resultados",
+            font=dict(color=WHITE, size=13, weight=700)))
+        fig.update_yaxes(title_text="Gasto (COP)", secondary_y=False,
+            gridcolor=BORDER, tickfont=dict(color=MUTED, size=10))
+        fig.update_yaxes(title_text="Resultados", secondary_y=True,
+            gridcolor=BORDER, tickfont=dict(color=MUTED, size=10))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-with tab3:
-    fig = make_subplots(rows=1, cols=2, subplot_titles=("Clics e Impresiones","CTR Diario (%)"),
-        column_widths=[0.55,0.45])
-    # Clics bars
-    if "Clics" in dfv.columns:
-        fig.add_trace(go.Bar(
-            x=dfv["Fecha"], y=dfv["Clics"], name="Clics",
-            marker=dict(color=PURPLEL, opacity=0.85,
-                line=dict(color="rgba(0,0,0,0)", width=0)),
-            hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f} clics</b><extra></extra>"
-        ), row=1, col=1)
-    if "Visitas Pag" in dfv.columns:
-        fig.add_trace(go.Scatter(
-            x=dfv["Fecha"], y=dfv["Visitas Pag"], name="Visitas Pág.",
-            line=dict(color=CYANL, width=2), mode="lines+markers",
-            marker=dict(size=4, color=CYANL),
-            hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f} visitas</b><extra></extra>"
-        ), row=1, col=1)
-    if "CTR" in dfv.columns:
-        fig.add_trace(go.Scatter(
-            x=dfv["Fecha"], y=dfv["CTR"], name="CTR %",
-            line=dict(color=GREEN, width=2.5),
-            fill="tozeroy", fillcolor="rgba(16,185,129,0.12)",
-            mode="lines+markers", marker=dict(size=5, color=GREEN,
-            line=dict(color=BG, width=1.5)),
-            hovertemplate="%{x|%d/%m}<br><b>%{y:.2f}%</b><extra>CTR</extra>"
-        ), row=1, col=2)
-    fig.update_layout(**BASE, title=dict(text="Tráfico y Tasa de Clics",
-        font=dict(color=WHITE, size=13, weight=700)))
-    fig.update_xaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
-    fig.update_yaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
-    for ann in fig.layout.annotations:
-        ann.font.color = MUTED; ann.font.size = 11
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    with ct2:
+        fig = go.Figure()
+        if "CxResultado FB" in dfv.columns:
+            fig.add_trace(go.Scatter(
+                x=dfv["Fecha"], y=dfv["CxResultado FB"], name="CxResultado FB",
+                line=dict(color=PURPLEL, width=2.5),
+                fill="tozeroy", fillcolor="rgba(168,85,247,0.1)",
+                mode="lines+markers", marker=dict(size=5, color=PURPLEL, line=dict(color=BG, width=1.5)),
+                hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>CxR FB</extra>"
+            ))
+        if "CxResultado+ TG" in dfv.columns:
+            fig.add_trace(go.Scatter(
+                x=dfv["Fecha"], y=dfv["CxResultado+ TG"], name="CxResultado + TG",
+                line=dict(color=CYANL, width=2, dash="dot"),
+                mode="lines+markers", marker=dict(size=4, color=CYANL),
+                hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>CxR+TG</extra>"
+            ))
+        tiers = [(750,"V1 Excelente",GREEN),(1125,"V2 Optimizar","#84CC16"),
+                 (1500,"V3 Objetivo",AMBER),(1875,"V4 Alerta","#F97316")]
+        for val, lbl, col in tiers:
+            fig.add_hline(y=val, line_dash="dash", line_color=col, opacity=0.5,
+                annotation_text=f"  {lbl}  ${val:,}", annotation_position="right",
+                annotation_font=dict(color=col, size=9))
+        fig.update_layout(**BASE, title=dict(text="Costo por Resultado · Referencias V1–V4",
+            font=dict(color=WHITE, size=13, weight=700)))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-with tab4:
-    fig = go.Figure()
-    df_exec = df_all[df_all["Ideal Gasto"].notna()].copy()
-    df_real = df_all[df_all["Gasto Real"].notna() & (df_all["Gasto Real"] > 0)].copy()
-    fig.add_trace(go.Scatter(
-        x=df_exec["Fecha"], y=df_exec["Ideal Gasto"], name="Ideal acumulado",
-        line=dict(color=MUTED2, width=2, dash="dash"),
-        hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>Ideal</extra>"
-    ))
-    fig.add_trace(go.Scatter(
-        x=df_real["Fecha"], y=df_real["Gasto Real"], name="Gasto real",
-        line=dict(color=PURPLEL, width=3),
-        fill="tonexty", fillcolor="rgba(168,85,247,0.08)",
-        mode="lines", hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>Real</extra>"
-    ))
-    if "Dif Gasto" in dfv.columns:
-        dif = df_real["Dif Gasto"].dropna()
-        cols_bar = [GREEN if v >= 0 else RED for v in dif]
-        fig.add_trace(go.Bar(
-            x=df_real["Fecha"], y=df_real["Dif Gasto"], name="Diferencia",
-            marker=dict(color=cols_bar, opacity=0.6), yaxis="y2",
-            hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>Dif.</extra>"
-        ))
-    layout2 = {**BASE}
-    layout2["yaxis2"] = dict(overlaying="y", side="right", gridcolor=BORDER,
-        tickfont=dict(color=MUTED, size=10), zeroline=True,
-        zerolinecolor=MUTED2, title="Diferencia ($)")
-    fig.update_layout(**layout2, title=dict(text="Ejecución Acumulada vs Ideal · Diferencia diaria",
-        font=dict(color=WHITE, size=13, weight=700)))
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    with ct3:
+        fig = make_subplots(rows=1, cols=2,
+            subplot_titles=("Clics e Impresiones", "CTR Diario (%)"),
+            column_widths=[0.55, 0.45])
+        if "Clics" in dfv.columns:
+            fig.add_trace(go.Bar(
+                x=dfv["Fecha"], y=dfv["Clics"], name="Clics",
+                marker=dict(color=PURPLEL, opacity=0.85, line=dict(color="rgba(0,0,0,0)", width=0)),
+                hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f} clics</b><extra></extra>"
+            ), row=1, col=1)
+        if "Visitas Pag" in dfv.columns:
+            fig.add_trace(go.Scatter(
+                x=dfv["Fecha"], y=dfv["Visitas Pag"], name="Visitas Pág.",
+                line=dict(color=CYANL, width=2), mode="lines+markers",
+                marker=dict(size=4, color=CYANL),
+                hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f} visitas</b><extra></extra>"
+            ), row=1, col=1)
+        if "CTR" in dfv.columns:
+            fig.add_trace(go.Scatter(
+                x=dfv["Fecha"], y=dfv["CTR"], name="CTR %",
+                line=dict(color=GREEN, width=2.5),
+                fill="tozeroy", fillcolor="rgba(16,185,129,0.12)",
+                mode="lines+markers", marker=dict(size=5, color=GREEN, line=dict(color=BG, width=1.5)),
+                hovertemplate="%{x|%d/%m}<br><b>%{y:.2f}%</b><extra>CTR</extra>"
+            ), row=1, col=2)
+        fig.update_layout(**BASE, title=dict(text="Tráfico y Tasa de Clics",
+            font=dict(color=WHITE, size=13, weight=700)))
+        fig.update_xaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
+        fig.update_yaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
+        for ann in fig.layout.annotations: ann.font.color = MUTED; ann.font.size = 11
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-with tab5:
-    fig = make_subplots(rows=1, cols=2,
-        subplot_titles=("TG Tracking diario ($)", "Meta Telegram acumulada vs Real"),
-        column_widths=[0.45, 0.55])
-    if "TG Tracking" in dfv.columns:
-        tg_vals = dfv["TG Tracking"].fillna(0)
-        tg_colors = [CYANL if v > 0 else MUTED2 for v in tg_vals]
-        fig.add_trace(go.Bar(
-            x=dfv["Fecha"], y=tg_vals, name="TG Tracking",
-            marker=dict(color=tg_colors, opacity=0.85,
-                line=dict(color="rgba(0,0,0,0)", width=0)),
-            hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>TG Tracking</extra>"
-        ), row=1, col=1)
-    df_tg = df_all[df_all["Meta Telegram"].notna()].copy()
-    df_tg_r = df_all[df_all["Meta VS Real"].notna()].copy()
-    if len(df_tg) > 0:
+    with ct4:
+        fig = go.Figure()
+        df_exec = df_all[df_all["Ideal Gasto"].notna()].copy()
+        df_real = df_all[df_all["Gasto Real"].notna() & (df_all["Gasto Real"] > 0)].copy()
         fig.add_trace(go.Scatter(
-            x=df_tg["Fecha"], y=df_tg["Meta Telegram"], name="Meta TG",
+            x=df_exec["Fecha"], y=df_exec["Ideal Gasto"], name="Ideal acumulado",
             line=dict(color=MUTED2, width=2, dash="dash"),
-            hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f}</b><extra>Meta</extra>"
-        ), row=1, col=2)
-    if len(df_tg_r) > 0:
-        meta_vs = df_tg_r["Meta VS Real"]
-        col_mv = [GREEN if v >= 0 else RED for v in meta_vs]
+            hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>Ideal</extra>"
+        ))
         fig.add_trace(go.Scatter(
-            x=df_tg_r["Fecha"], y=meta_vs, name="Meta VS Real",
-            line=dict(color=CYANL, width=2.5),
-            mode="lines+markers",
-            marker=dict(size=5, color=col_mv, line=dict(color=BG, width=1)),
-            hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f}</b><extra>VS Real</extra>"
-        ), row=1, col=2)
-    fig.update_layout(**BASE, title=dict(text="Seguimiento Telegram",
-        font=dict(color=WHITE, size=13, weight=700)))
-    fig.update_xaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
-    fig.update_yaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
-    for ann in fig.layout.annotations:
-        ann.font.color = MUTED; ann.font.size = 11
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            x=df_real["Fecha"], y=df_real["Gasto Real"], name="Gasto real",
+            line=dict(color=PURPLEL, width=3),
+            fill="tonexty", fillcolor="rgba(168,85,247,0.08)",
+            mode="lines", hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>Real</extra>"
+        ))
+        if "Dif Gasto" in df_real.columns:
+            cols_bar = [GREEN if v >= 0 else RED for v in df_real["Dif Gasto"].dropna()]
+            fig.add_trace(go.Bar(
+                x=df_real["Fecha"], y=df_real["Dif Gasto"], name="Diferencia",
+                marker=dict(color=cols_bar, opacity=0.6), yaxis="y2",
+                hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>Dif.</extra>"
+            ))
+        layout2 = {**BASE}
+        layout2["yaxis2"] = dict(overlaying="y", side="right", gridcolor=BORDER,
+            tickfont=dict(color=MUTED, size=10), zeroline=True,
+            zerolinecolor=MUTED2, title="Diferencia ($)")
+        fig.update_layout(**layout2, title=dict(text="Ejecución Acumulada vs Ideal · Diferencia diaria",
+            font=dict(color=WHITE, size=13, weight=700)))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-# ── SECTION 5: DATA TABLE ─────────────────────────────────────────────────────
-st.markdown('<div class="slabel">Detalle diario</div>', unsafe_allow_html=True)
+    with ct5:
+        fig = make_subplots(rows=1, cols=2,
+            subplot_titles=("TG Tracking diario ($)", "Meta Telegram acumulada vs Real"),
+            column_widths=[0.45, 0.55])
+        if "TG Tracking" in dfv.columns:
+            tg_vals   = dfv["TG Tracking"].fillna(0)
+            tg_colors = [CYANL if v > 0 else MUTED2 for v in tg_vals]
+            fig.add_trace(go.Bar(
+                x=dfv["Fecha"], y=tg_vals, name="TG Tracking",
+                marker=dict(color=tg_colors, opacity=0.85, line=dict(color="rgba(0,0,0,0)", width=0)),
+                hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>TG Tracking</extra>"
+            ), row=1, col=1)
+        df_tg   = df_all[df_all["Meta Telegram"].notna()].copy()
+        df_tg_r = df_all[df_all["Meta VS Real"].notna()].copy()
+        if len(df_tg) > 0:
+            fig.add_trace(go.Scatter(
+                x=df_tg["Fecha"], y=df_tg["Meta Telegram"], name="Meta TG",
+                line=dict(color=MUTED2, width=2, dash="dash"),
+                hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f}</b><extra>Meta</extra>"
+            ), row=1, col=2)
+        if len(df_tg_r) > 0:
+            col_mv = [GREEN if v >= 0 else RED for v in df_tg_r["Meta VS Real"]]
+            fig.add_trace(go.Scatter(
+                x=df_tg_r["Fecha"], y=df_tg_r["Meta VS Real"], name="Meta VS Real",
+                line=dict(color=CYANL, width=2.5), mode="lines+markers",
+                marker=dict(size=5, color=col_mv, line=dict(color=BG, width=1)),
+                hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f}</b><extra>VS Real</extra>"
+            ), row=1, col=2)
+        fig.update_layout(**BASE, title=dict(text="Seguimiento Telegram",
+            font=dict(color=WHITE, size=13, weight=700)))
+        fig.update_xaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
+        fig.update_yaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
+        for ann in fig.layout.annotations: ann.font.color = MUTED; ann.font.size = 11
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-show_cols = ["Fecha","Gasto","Resultado","CxResultado FB","CxResultado+ TG",
-             "Impresiones","Clics","CxClic","CTR","Cargar Web","Conv Web","TG Tracking"]
-show_cols = [c for c in show_cols if c in dfv.columns]
-tbl = dfv[show_cols].copy()
-tbl["Fecha"] = tbl["Fecha"].dt.strftime("%d/%m/%Y")
-tbl = tbl.set_index("Fecha")
+    # ── TABLA DIARIA ──────────────────────────────────────────────────────────
+    st.markdown('<div class="slabel">Detalle diario</div>', unsafe_allow_html=True)
 
-fmt = {}
-for c in tbl.columns:
-    if c in ["Gasto","CxResultado FB","CxResultado+ TG","CxClic","TG Tracking"]:
-        fmt[c] = "${:,.0f}"
-    elif c in ["CTR","Cargar Web","Conv Web"]:
-        fmt[c] = "{:.2f}%"
-    elif c in ["Resultado","Impresiones","Clics"]:
-        fmt[c] = "{:,.0f}"
+    show_cols = ["Fecha","Gasto","Resultado","CxResultado FB","CxResultado+ TG",
+                 "Impresiones","Clics","CxClic","CTR","Cargar Web","Conv Web","TG Tracking"]
+    show_cols = [c for c in show_cols if c in dfv.columns]
+    tbl = dfv[show_cols].copy()
+    tbl["Fecha"] = tbl["Fecha"].dt.strftime("%d/%m/%Y")
+    tbl = tbl.set_index("Fecha")
+    fmt = {}
+    for c in tbl.columns:
+        if c in ["Gasto","CxResultado FB","CxResultado+ TG","CxClic","TG Tracking"]: fmt[c] = "${:,.0f}"
+        elif c in ["CTR","Cargar Web","Conv Web"]: fmt[c] = "{:.2f}%"
+        elif c in ["Resultado","Impresiones","Clics"]: fmt[c] = "{:,.0f}"
+    st.dataframe(tbl.style.format(fmt, na_rep="—"), use_container_width=True, height=380)
 
-st.dataframe(tbl.style.format(fmt, na_rep="—"), use_container_width=True, height=380)
+# ══════════════════════════════════════════════════════════════════════════════
+# PESTAÑA 2 — META ADS
+# ══════════════════════════════════════════════════════════════════════════════
+with pg2:
 
-# ── FOOTER ────────────────────────────────────────────────────────────────────
+    if "meta_reports" not in st.session_state:
+        st.session_state.meta_reports = []
+
+    st.markdown('<div class="slabel">Subir reporte de Meta Ads Manager</div>', unsafe_allow_html=True)
+
+    up_col, cnt_col = st.columns([5, 1])
+    with up_col:
+        uploaded_file = st.file_uploader(
+            "Sube un reporte CSV exportado desde Meta Ads Manager",
+            type=["csv"],
+            help="Administrador de Anuncios → Exportar → CSV",
+            label_visibility="collapsed"
+        )
+    with cnt_col:
+        n_rep = len(st.session_state.meta_reports)
+        if n_rep:
+            st.markdown(kcard("Reportes", str(n_rep), "cy","cy"), unsafe_allow_html=True)
+
+    if uploaded_file:
+        try:
+            raw_bytes = uploaded_file.read()
+            try:
+                df_up = pd.read_csv(io.BytesIO(raw_bytes), thousands=".", decimal=",",
+                                    dtype=str, keep_default_na=False)
+            except Exception:
+                df_up = pd.read_csv(io.BytesIO(raw_bytes), dtype=str, keep_default_na=False)
+
+            df_up.columns = [str(c).strip() for c in df_up.columns]
+
+            col_spend   = find_col(df_up, "spend")
+            col_results = find_col(df_up, "results")
+            col_cpr     = find_col(df_up, "cpr")
+            col_impr    = find_col(df_up, "impressions")
+            col_clicks  = find_col(df_up, "clicks")
+            col_ctr     = find_col(df_up, "ctr")
+            col_reach   = find_col(df_up, "reach")
+            col_camp    = find_col(df_up, "campaign")
+            col_adset   = find_col(df_up, "adset")
+            col_ad      = find_col(df_up, "ad")
+
+            for c in [col_spend,col_results,col_cpr,col_impr,col_clicks,col_ctr,col_reach]:
+                if c: df_up[c] = df_up[c].apply(parse_meta_num)
+
+            name_col = col_ad or col_adset or col_camp
+            if name_col:
+                df_up = df_up[df_up[name_col].apply(
+                    lambda x: str(x).strip().lower() not in SKIP_VALS)]
+
+            if col_ad:      rtype = "Anuncios"
+            elif col_adset: rtype = "Públicos"
+            elif col_camp:  rtype = "Campañas"
+            else:           rtype = "General"
+
+            entry = {"name": uploaded_file.name, "type": rtype, "df": df_up,
+                     "cols": dict(spend=col_spend, results=col_results, cpr=col_cpr,
+                                  impressions=col_impr, clicks=col_clicks, ctr=col_ctr,
+                                  reach=col_reach, campaign=col_camp, adset=col_adset, ad=col_ad)}
+            if not any(r["name"] == uploaded_file.name for r in st.session_state.meta_reports):
+                st.session_state.meta_reports.append(entry)
+
+            st.markdown(
+                f"<div style='font-size:.72rem;color:{GREEN};font-weight:600;margin:.4rem 0'>"
+                f"✓ {uploaded_file.name} &nbsp;·&nbsp; Tipo: {rtype} &nbsp;·&nbsp; {len(df_up)} filas</div>",
+                unsafe_allow_html=True)
+
+            # KPIs
+            t_spend   = df_up[col_spend].sum()   if col_spend   else np.nan
+            t_results = df_up[col_results].sum() if col_results else np.nan
+            avg_cpr_m = df_up[col_cpr].mean()    if col_cpr     else (t_spend/t_results if t_results else np.nan)
+            t_impr_m  = df_up[col_impr].sum()    if col_impr    else np.nan
+            avg_ctr_m = df_up[col_ctr].mean()    if col_ctr     else np.nan
+
+            mk1,mk2,mk3,mk4,mk5 = st.columns(5)
+            mk1.markdown(kcard("Gasto Total",  fmt_cop(t_spend),   "pu","pu"), unsafe_allow_html=True)
+            mk2.markdown(kcard("Resultados",   fmt_num(t_results), "cy","cy"), unsafe_allow_html=True)
+            mk3.markdown(kcard("CxResultado",  fmt_cop(avg_cpr_m), "plain"),   unsafe_allow_html=True)
+            mk4.markdown(kcard("Impresiones",  fmt_num(t_impr_m),  "plain"),   unsafe_allow_html=True)
+            mk5.markdown(kcard("CTR prom.",
+                f"{avg_ctr_m:.2f}%" if avg_ctr_m and not np.isnan(avg_ctr_m) else "—",
+                "gn","gn"), unsafe_allow_html=True)
+
+            st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+
+            # Gráficas de ranking
+            if rtype in ["Públicos","Anuncios"] and name_col:
+                lbl_name = "Público" if rtype == "Públicos" else "Anuncio"
+                BASE_M = dict(
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(20,25,41,0.6)",
+                    font=dict(family="Inter", color=MUTED, size=11),
+                    margin=dict(l=10, r=10, t=70, b=10), height=380,
+                    hoverlabel=dict(bgcolor=CARD2, font_color=WHITE),
+                    legend=dict(font=dict(color=MUTED, size=10), bgcolor="rgba(0,0,0,0)")
+                )
+                gc1, gc2 = st.columns(2)
+
+                with gc1:
+                    if col_results:
+                        df_top = df_up[[name_col, col_results]].copy()
+                        df_top = df_top[df_top[col_results].notna() & (df_top[col_results] > 0)]
+                        df_top = df_top.sort_values(col_results, ascending=True).tail(10)
+                        df_top[name_col] = df_top[name_col].apply(
+                            lambda x: str(x)[:38]+"…" if len(str(x))>38 else str(x))
+                        fig_r = go.Figure(go.Bar(
+                            x=df_top[col_results], y=df_top[name_col], orientation="h",
+                            marker=dict(color=df_top[col_results].values,
+                                colorscale=[[0,PURPLE],[1,CYANL]], opacity=0.9),
+                            hovertemplate="<b>%{y}</b><br>Resultados: %{x}<extra></extra>"
+                        ))
+                        fig_r.update_layout(**BASE_M,
+                            title=dict(text=f"Top {lbl_name}s · Resultados",
+                                font=dict(color=WHITE,size=13,weight=700)),
+                            xaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9)),
+                            yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(color=WHITE,size=9)))
+                        st.plotly_chart(fig_r, use_container_width=True, config={"displayModeBar":False})
+
+                with gc2:
+                    if col_cpr:
+                        df_cpr_t = df_up[[name_col, col_cpr]].copy()
+                        df_cpr_t = df_cpr_t[df_cpr_t[col_cpr].notna() & (df_cpr_t[col_cpr] > 0)]
+                        df_cpr_t = df_cpr_t.sort_values(col_cpr, ascending=True).head(10)
+                        df_cpr_t[name_col] = df_cpr_t[name_col].apply(
+                            lambda x: str(x)[:38]+"…" if len(str(x))>38 else str(x))
+                        fig_c = go.Figure(go.Bar(
+                            x=df_cpr_t[col_cpr], y=df_cpr_t[name_col], orientation="h",
+                            marker=dict(color=PINK, opacity=0.85),
+                            hovertemplate="<b>%{y}</b><br>CxResultado: $%{x:,.0f}<extra></extra>"
+                        ))
+                        fig_c.update_layout(**BASE_M,
+                            title=dict(text=f"Menor Costo por Resultado · {lbl_name}",
+                                font=dict(color=WHITE,size=13,weight=700)),
+                            xaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9)),
+                            yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(color=WHITE,size=9)))
+                        st.plotly_chart(fig_c, use_container_width=True, config={"displayModeBar":False})
+
+            # Tabla completa
+            with st.expander("Ver tabla completa del reporte"):
+                show = [c for c in [col_camp,col_adset,col_ad,col_spend,col_results,
+                                    col_cpr,col_impr,col_clicks,col_ctr,col_reach] if c]
+                if show:
+                    fmt_tbl = {}
+                    if col_spend:   fmt_tbl[col_spend]   = "${:,.0f}"
+                    if col_cpr:     fmt_tbl[col_cpr]     = "${:,.0f}"
+                    if col_ctr:     fmt_tbl[col_ctr]     = "{:.2f}%"
+                    if col_results: fmt_tbl[col_results] = "{:,.0f}"
+                    if col_impr:    fmt_tbl[col_impr]    = "{:,.0f}"
+                    if col_clicks:  fmt_tbl[col_clicks]  = "{:,.0f}"
+                    if col_reach:   fmt_tbl[col_reach]   = "{:,.0f}"
+                    st.dataframe(df_up[show].style.format(fmt_tbl, na_rep="—"),
+                                 use_container_width=True)
+
+        except Exception as e:
+            st.error(f"Error leyendo el archivo: {e}")
+
+    else:
+        st.markdown(f"""
+<div style="background:{CARD};border:2px dashed {BORDER};border-radius:16px;
+  padding:2.5rem;text-align:center;margin-top:.5rem">
+  <div style="font-size:2.5rem;margin-bottom:.8rem">📊</div>
+  <div style="color:{WHITE};font-weight:700;font-size:1rem;margin-bottom:.7rem">
+    Sube un reporte de Meta Ads Manager</div>
+  <div style="color:{MUTED};font-size:.8rem;line-height:2">
+    1 · Abre el <strong style="color:{CYANL}">Administrador de Anuncios</strong> de Meta<br>
+    2 · Ajusta el período y el nivel:
+      <strong style="color:{CYANL}">Campañas / Conjuntos de anuncios / Anuncios</strong><br>
+    3 · Haz clic en <strong style="color:{CYANL}">Exportar → CSV</strong><br>
+    4 · Sube el archivo aquí — el dashboard detecta el tipo automáticamente
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    # Historial
+    if len(st.session_state.meta_reports) > 0:
+        st.markdown('<div class="slabel">Historial de reportes</div>', unsafe_allow_html=True)
+        for rep in st.session_state.meta_reports:
+            hc1,hc2,hc3,hc4 = st.columns([4,1,1,1])
+            sc = rep["cols"]["spend"]; rc = rep["cols"]["results"]
+            df_r = rep["df"]
+            hc1.markdown(f"<span style='color:{WHITE};font-size:.82rem'>{rep['name']}</span>",
+                         unsafe_allow_html=True)
+            hc2.markdown(f"<span style='color:{MUTED};font-size:.75rem'>{rep['type']}</span>",
+                         unsafe_allow_html=True)
+            hc3.markdown(f"<span style='color:{PURPLEL};font-size:.82rem;font-weight:700'>"
+                         f"{fmt_cop(df_r[sc].sum()) if sc else '—'}</span>", unsafe_allow_html=True)
+            hc4.markdown(f"<span style='color:{CYANL};font-size:.82rem;font-weight:700'>"
+                         f"{fmt_num(df_r[rc].sum()) if rc else '—'} leads</span>", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PESTAÑA 3 — TELEGRAM
+# ══════════════════════════════════════════════════════════════════════════════
+with pg3:
+    st.markdown(f"""
+<div style="background:{CARD};border:2px dashed {BORDER};border-radius:16px;
+  padding:3rem;text-align:center;margin-top:1rem">
+  <div style="font-size:3rem;margin-bottom:1rem">📲</div>
+  <div style="color:{WHITE};font-weight:700;font-size:1.1rem;margin-bottom:.8rem">
+    Conexión Telegram · Próximamente</div>
+  <div style="color:{MUTED};font-size:.82rem;line-height:2;max-width:500px;margin:0 auto">
+    Aquí vamos a conectar el canal de Telegram para ver en tiempo real:<br>
+    <strong style="color:{CYANL}">Miembros · Crecimiento · Mensajes · Engagement</strong><br><br>
+    Esta sección estará disponible en la próxima versión del dashboard.
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ── FOOTER ─────────────────────────────────────────────────────────────────────
 st.markdown(f"""
 <div style="text-align:center;padding:2.5rem 0 1rem 0;">
   <span style="font-size:.6rem;letter-spacing:.3em;text-transform:uppercase;
