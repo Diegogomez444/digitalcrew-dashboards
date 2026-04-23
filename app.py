@@ -464,8 +464,135 @@ with c_btn:
         st.cache_data.clear()
         st.rerun()
 
+# Cargar datos de Telegram antes de las pestañas (necesario para Resumen)
+tg = load_telegram_data()
+
 # ── PESTAÑAS PRINCIPALES ───────────────────────────────────────────────────────
-pg1, pg2, pg3 = st.tabs(["📋  Reporte", "📘  Meta Ads", "📲  Telegram"])
+pg0, pg1, pg2, pg3 = st.tabs(["📊  Resumen", "📋  Reporte", "📘  Meta Ads", "📲  Telegram"])
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PESTAÑA 0 — RESUMEN
+# ══════════════════════════════════════════════════════════════════════════════
+with pg0:
+    def fmt_date_es_r(d):
+        meses = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"]
+        return f"{d.day} {meses[d.month-1]} {d.year}"
+
+    min_d_r = df_all["Fecha"].dt.date.min()
+    max_d_r = df_all["Fecha"].dt.date.max()
+    ayer_r  = date.today() - timedelta(days=1)
+
+    if "res_sel"   not in st.session_state: st.session_state.res_sel   = "Todo el período"
+    if "res_start" not in st.session_state: st.session_state.res_start = min_d_r
+    if "res_end"   not in st.session_state: st.session_state.res_end   = max_d_r
+
+    OPCIONES_R = {
+        "Hoy":             (date.today(), date.today()),
+        "Ayer":            (ayer_r, ayer_r),
+        "Últimos 7 días":  (max_d_r - timedelta(days=6),  max_d_r),
+        "Últimos 14 días": (max_d_r - timedelta(days=13), max_d_r),
+        "Últimos 30 días": (max_d_r - timedelta(days=29), max_d_r),
+        "Este mes":        (date.today().replace(day=1),  max_d_r),
+        "Todo el período": (min_d_r, max_d_r),
+        "Personalizado":   (st.session_state.res_start, st.session_state.res_end),
+    }
+
+    cur_sel_r = st.session_state.res_sel
+    if cur_sel_r in OPCIONES_R and cur_sel_r != "Personalizado":
+        cur_start_r, cur_end_r = OPCIONES_R[cur_sel_r]
+    else:
+        cur_start_r = st.session_state.res_start
+        cur_end_r   = st.session_state.res_end
+    cur_start_r = max(min_d_r, min(max_d_r, cur_start_r))
+    cur_end_r   = max(min_d_r, min(max_d_r, cur_end_r))
+    if cur_start_r > cur_end_r: cur_start_r = cur_end_r
+
+    if cur_start_r == cur_end_r:
+        btn_lbl_r = f"📅  {fmt_date_es_r(cur_start_r)}  ▾"
+        rango_r   = fmt_date_es_r(cur_start_r)
+    else:
+        btn_lbl_r = f"📅  {fmt_date_es_r(cur_start_r)} – {fmt_date_es_r(cur_end_r)}  ▾"
+        rango_r   = f"{fmt_date_es_r(cur_start_r)} – {fmt_date_es_r(cur_end_r)}"
+
+    st.markdown('<div class="slabel">Resumen general</div>', unsafe_allow_html=True)
+
+    lbl_col_r, pop_col_r = st.columns([5, 4])
+    with lbl_col_r:
+        st.markdown(
+            f"<div style='padding-top:.6rem;font-size:.72rem;color:{MUTED};font-weight:500'>"
+            f"Período analizado: <strong style='color:{CYANL}'>{rango_r}</strong></div>",
+            unsafe_allow_html=True)
+    with pop_col_r:
+        with st.popover(btn_lbl_r, use_container_width=True):
+            opciones_r = list(OPCIONES_R.keys())
+            idx_r = opciones_r.index(cur_sel_r) if cur_sel_r in opciones_r else 6
+            new_sel_r = st.radio("Período", opciones_r, index=idx_r,
+                                 label_visibility="collapsed", key="res_radio")
+            st.session_state.res_sel = new_sel_r
+            if new_sel_r == "Personalizado":
+                rpc1, rpc2 = st.columns(2)
+                with rpc1:
+                    ns_r = st.date_input("Desde", value=st.session_state.res_start,
+                                         min_value=min_d_r, max_value=max_d_r, key="res_ds")
+                    st.session_state.res_start = ns_r
+                with rpc2:
+                    ne_r = st.date_input("Hasta", value=st.session_state.res_end,
+                                         min_value=min_d_r, max_value=max_d_r, key="res_de")
+                    st.session_state.res_end = ne_r
+
+    if st.session_state.res_sel != "Personalizado":
+        r_start, r_end = OPCIONES_R[st.session_state.res_sel]
+    else:
+        r_start = st.session_state.res_start
+        r_end   = st.session_state.res_end
+    r_start = max(min_d_r, min(max_d_r, r_start))
+    r_end   = max(min_d_r, min(max_d_r, r_end))
+    if r_start > r_end: r_start = r_end
+
+    dfr  = df_all[(df_all["Fecha"].dt.date >= r_start) & (df_all["Fecha"].dt.date <= r_end)].copy()
+    dfrv = dfr[dfr["Gasto"].notna() & (dfr["Gasto"] > 0)].copy()
+
+    # KPIs
+    inv_ads_r   = float(dfrv["Gasto"].sum()) if "Gasto" in dfrv.columns and not dfrv.empty else 0.0
+    inv_bot_r   = parse_cop(summ.get("inv_bot","0")) or 0.0
+    total_inv_r = inv_ads_r + inv_bot_r
+
+    # Leads desde Telegram (entradas del período)
+    leads_tg_r = 0
+    if tg and "error" not in tg:
+        df_growth_tg = tg.get("df_growth", pd.DataFrame())
+        if not df_growth_tg.empty and "entradas" in df_growth_tg.columns:
+            dg_filt = df_growth_tg[
+                (df_growth_tg["fecha"].dt.date >= r_start) &
+                (df_growth_tg["fecha"].dt.date <= r_end)
+            ]
+            leads_tg_r = int(dg_filt["entradas"].sum())
+
+    cxl_ads_r = inv_ads_r   / leads_tg_r if leads_tg_r > 0 else None
+    cxl_gen_r = total_inv_r / leads_tg_r if leads_tg_r > 0 else None
+
+    conv_web_r = None
+    if "Conv Web" in dfrv.columns and dfrv["Conv Web"].notna().any():
+        conv_web_r = dfrv["Conv Web"].mean()
+
+    st.markdown('<div class="slabel">Métricas principales</div>', unsafe_allow_html=True)
+
+    rk1, rk2, rk3, rk4 = st.columns(4)
+    rk1.markdown(kcard("Inversión Ads",    fmt_cop(inv_ads_r),  "pu","pu"), unsafe_allow_html=True)
+    rk2.markdown(kcard("Inversión Bot TG", fmt_cop(inv_bot_r),  "plain"),   unsafe_allow_html=True)
+    rk3.markdown(kcard("Leads Telegram",
+        fmt_num(leads_tg_r) if leads_tg_r else "—", "cy","cy"), unsafe_allow_html=True)
+    rk4.markdown(kcard("Total Inversión",  fmt_cop(total_inv_r),"pu","pu"), unsafe_allow_html=True)
+
+    st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+
+    rk5, rk6, rk7, _ = st.columns(4)
+    rk5.markdown(kcard("CxLead Ads",
+        fmt_cop(cxl_ads_r) if cxl_ads_r is not None else "—", "pk","pk"), unsafe_allow_html=True)
+    rk6.markdown(kcard("CxLead General",
+        fmt_cop(cxl_gen_r) if cxl_gen_r is not None else "—", "pk","pk"), unsafe_allow_html=True)
+    rk7.markdown(kcard("Conv Web",
+        f"{conv_web_r:.2f}%" if conv_web_r is not None else "—", "gn","gn"), unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PESTAÑA 1 — REPORTE
@@ -1036,8 +1163,6 @@ with pg2:
 # PESTAÑA 3 — TELEGRAM
 # ══════════════════════════════════════════════════════════════════════════════
 with pg3:
-    tg = load_telegram_data()
-
     if "error" in tg:
         st.error(f"Error conectando a Telegram: {tg['error']}")
     else:
