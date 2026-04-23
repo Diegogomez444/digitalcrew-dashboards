@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -8,23 +9,25 @@ import io
 
 # ── CONFIG ─────────────────────────────────────────────────────────────────────
 try:
-    SHEET_ID    = st.secrets.get("SHEET_ID",    "1KszbEw3CX5jWtWxqE_Oy7Bi17IA5ZJr6FfOkCRJ4zH4")
-    GID_GENERAL = st.secrets.get("GID_GENERAL", "0")
-    GID_TG      = st.secrets.get("GID_TG",      "859239310")
-    CLIENTE     = st.secrets.get("CLIENTE",     "La Fiera Analista")
-    TG_API_ID   = st.secrets.get("TG_API_ID",   "")
-    TG_API_HASH = st.secrets.get("TG_API_HASH", "")
-    TG_SESSION  = "".join(str(st.secrets.get("TG_SESSION", "")).split())
-    TG_CHANNEL  = st.secrets.get("TG_CHANNEL",  "")
+    SHEET_ID      = st.secrets.get("SHEET_ID",      "1KszbEw3CX5jWtWxqE_Oy7Bi17IA5ZJr6FfOkCRJ4zH4")
+    GID_GENERAL   = st.secrets.get("GID_GENERAL",   "0")
+    GID_TG        = st.secrets.get("GID_TG",        "859239310")
+    GID_HISTORICO = st.secrets.get("GID_HISTORICO", "2086565186")
+    CLIENTE       = st.secrets.get("CLIENTE",       "La Fiera Analista")
+    TG_API_ID     = st.secrets.get("TG_API_ID",     "")
+    TG_API_HASH   = st.secrets.get("TG_API_HASH",   "")
+    TG_SESSION    = "".join(str(st.secrets.get("TG_SESSION", "")).split())
+    TG_CHANNEL    = st.secrets.get("TG_CHANNEL",    "")
 except Exception:
-    SHEET_ID    = "1KszbEw3CX5jWtWxqE_Oy7Bi17IA5ZJr6FfOkCRJ4zH4"
-    GID_GENERAL = "0"
-    GID_TG      = "859239310"
-    CLIENTE     = "La Fiera Analista"
-    TG_API_ID   = ""
-    TG_API_HASH = ""
-    TG_SESSION  = ""
-    TG_CHANNEL  = ""
+    SHEET_ID      = "1KszbEw3CX5jWtWxqE_Oy7Bi17IA5ZJr6FfOkCRJ4zH4"
+    GID_GENERAL   = "0"
+    GID_TG        = "859239310"
+    GID_HISTORICO = "2086565186"
+    CLIENTE       = "La Fiera Analista"
+    TG_API_ID     = ""
+    TG_API_HASH   = ""
+    TG_SESSION    = ""
+    TG_CHANNEL    = ""
 
 
 # ── PALETTE ────────────────────────────────────────────────────────────────────
@@ -325,6 +328,33 @@ def load_daily():
         if c in df.columns: df[c] = df[c].apply(parse_pct)
     return df.sort_values("Fecha").reset_index(drop=True)
 
+@st.cache_data(ttl=300)
+def load_historical():
+    try:
+        raw = fetch_csv(GID_HISTORICO)
+    except Exception:
+        return pd.DataFrame()
+    hdr = None
+    for i, row in raw.iterrows():
+        if str(row.iloc[0]).strip() == "Fecha": hdr = i; break
+    if hdr is None: return pd.DataFrame()
+    cols = [str(h).strip() for h in raw.iloc[hdr]]
+    df = raw.iloc[hdr+1:].copy()
+    df.columns = range(len(df.columns))
+    df = df.rename(columns={i: h for i, h in enumerate(cols) if h and h != "nan"})
+    skip = {"","nan","Total Ads","Total General","P.Restante","Dias restantes","P.x dia"}
+    df = df[df["Fecha"].apply(lambda x: str(x).strip() not in skip)]
+    df["Fecha"] = pd.to_datetime(df["Fecha"], dayfirst=True, errors="coerce")
+    df = df[df["Fecha"].notna() & (df["Fecha"].dt.date <= date.today())]
+    for c in ["Gasto","CxResultado FB","CxResultado+ TG","CxClic","CxV. Pagina",
+              "Ideal Gasto","Gasto Real","Dif Gasto","TG Tracking","Dolar Hoy"]:
+        if c in df.columns: df[c] = df[c].apply(parse_cop)
+    for c in ["Resultado","Impresiones","Clics","Visitas Pag","Meta Telegram","Meta VS Real"]:
+        if c in df.columns: df[c] = df[c].apply(parse_num)
+    for c in ["CTR","Cargar Web","Conv Web"]:
+        if c in df.columns: df[c] = df[c].apply(parse_pct)
+    return df.sort_values("Fecha").reset_index(drop=True)
+
 # ── PAGE SETUP ─────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Digital Crew · Dashboard", page_icon="⚡", layout="wide")
 
@@ -435,8 +465,15 @@ label[data-testid="stWidgetLabel"] p{{
 """, unsafe_allow_html=True)
 
 # ── LOAD DATA ──────────────────────────────────────────────────────────────────
-summ   = load_summary()
-df_all = load_daily()
+summ     = load_summary()
+df_all   = load_daily()
+df_hist  = load_historical()
+
+# Combinado TG + Histórico para el Resumen (TG tiene prioridad en fechas duplicadas)
+df_combined = pd.concat([df_hist, df_all], ignore_index=True)
+df_combined["Fecha"] = df_combined["Fecha"].dt.normalize()
+df_combined = df_combined.drop_duplicates(subset=["Fecha"], keep="last")
+df_combined = df_combined.sort_values("Fecha").reset_index(drop=True)
 
 if df_all is None:
     st.error("No se pudieron cargar los datos. Verifica que el Sheet sea público.")
@@ -468,7 +505,28 @@ with c_btn:
 tg = load_telegram_data()
 
 # ── PESTAÑAS PRINCIPALES ───────────────────────────────────────────────────────
-pg0, pg1, pg2, pg3 = st.tabs(["📊  Resumen", "📋  Reporte", "📘  Meta Ads", "📲  Telegram"])
+pg0, pg1, pg2, pg3 = st.tabs(["📊  Resumen", "📅  Mes Actual", "📘  Meta Ads", "📲  Telegram"])
+
+components.html("""
+<script>
+(function() {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    async function initTabs() {
+        await sleep(400);
+        const tabs = parent.document.querySelectorAll('[data-baseweb="tab"]');
+        if (!tabs.length) return;
+        const saved = sessionStorage.getItem('dc_active_tab');
+        if (saved !== null && tabs[parseInt(saved)]) {
+            tabs[parseInt(saved)].click();
+        }
+        tabs.forEach((tab, i) => {
+            tab.addEventListener('click', () => sessionStorage.setItem('dc_active_tab', String(i)));
+        });
+    }
+    initTabs();
+})();
+</script>
+""", height=0)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PESTAÑA 0 — RESUMEN
@@ -478,31 +536,31 @@ with pg0:
         meses = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"]
         return f"{d.day} {meses[d.month-1]} {d.year}"
 
-    min_d_r = df_all["Fecha"].dt.date.min()
-    max_d_r = df_all["Fecha"].dt.date.max()
+    min_d_r = df_combined["Fecha"].dt.date.min()
     ayer_r  = date.today() - timedelta(days=1)
+    max_d_r = min(df_combined["Fecha"].dt.date.max(), ayer_r)
 
-    if "res_sel"   not in st.session_state: st.session_state.res_sel   = "Todo el período"
-    if "res_start" not in st.session_state: st.session_state.res_start = min_d_r
-    if "res_end"   not in st.session_state: st.session_state.res_end   = max_d_r
+    # Usamos el key del radio directamente para que el label se actualice en el mismo rerun
+    cur_sel_r = st.session_state.get("res_radio", "Todo el período")
 
     OPCIONES_R = {
-        "Hoy":             (date.today(), date.today()),
         "Ayer":            (ayer_r, ayer_r),
         "Últimos 7 días":  (max_d_r - timedelta(days=6),  max_d_r),
         "Últimos 14 días": (max_d_r - timedelta(days=13), max_d_r),
         "Últimos 30 días": (max_d_r - timedelta(days=29), max_d_r),
         "Este mes":        (date.today().replace(day=1),  max_d_r),
         "Todo el período": (min_d_r, max_d_r),
-        "Personalizado":   (st.session_state.res_start, st.session_state.res_end),
+        "Personalizado":   (
+            st.session_state.get("res_ds", min_d_r),
+            st.session_state.get("res_de", max_d_r),
+        ),
     }
 
-    cur_sel_r = st.session_state.res_sel
     if cur_sel_r in OPCIONES_R and cur_sel_r != "Personalizado":
         cur_start_r, cur_end_r = OPCIONES_R[cur_sel_r]
     else:
-        cur_start_r = st.session_state.res_start
-        cur_end_r   = st.session_state.res_end
+        cur_start_r = st.session_state.get("res_ds", min_d_r)
+        cur_end_r   = st.session_state.get("res_de", max_d_r)
     cur_start_r = max(min_d_r, min(max_d_r, cur_start_r))
     cur_end_r   = max(min_d_r, min(max_d_r, cur_end_r))
     if cur_start_r > cur_end_r: cur_start_r = cur_end_r
@@ -525,74 +583,99 @@ with pg0:
     with pop_col_r:
         with st.popover(btn_lbl_r, use_container_width=True):
             opciones_r = list(OPCIONES_R.keys())
-            idx_r = opciones_r.index(cur_sel_r) if cur_sel_r in opciones_r else 6
-            new_sel_r = st.radio("Período", opciones_r, index=idx_r,
-                                 label_visibility="collapsed", key="res_radio")
-            st.session_state.res_sel = new_sel_r
-            if new_sel_r == "Personalizado":
+            idx_r = opciones_r.index(cur_sel_r) if cur_sel_r in opciones_r else 5
+            st.radio("Período", opciones_r, index=idx_r,
+                     label_visibility="collapsed", key="res_radio")
+            if st.session_state.get("res_radio") == "Personalizado":
                 rpc1, rpc2 = st.columns(2)
                 with rpc1:
-                    ns_r = st.date_input("Desde", value=st.session_state.res_start,
-                                         min_value=min_d_r, max_value=max_d_r, key="res_ds")
-                    st.session_state.res_start = ns_r
+                    st.date_input("Desde", value=st.session_state.get("res_ds", min_d_r),
+                                  min_value=min_d_r, max_value=max_d_r, key="res_ds")
                 with rpc2:
-                    ne_r = st.date_input("Hasta", value=st.session_state.res_end,
-                                         min_value=min_d_r, max_value=max_d_r, key="res_de")
-                    st.session_state.res_end = ne_r
+                    st.date_input("Hasta", value=st.session_state.get("res_de", max_d_r),
+                                  min_value=min_d_r, max_value=max_d_r, key="res_de")
 
-    if st.session_state.res_sel != "Personalizado":
-        r_start, r_end = OPCIONES_R[st.session_state.res_sel]
+    r_sel = st.session_state.get("res_radio", "Todo el período")
+    if r_sel != "Personalizado":
+        r_start, r_end = OPCIONES_R[r_sel]
     else:
-        r_start = st.session_state.res_start
-        r_end   = st.session_state.res_end
+        r_start = st.session_state.get("res_ds", min_d_r)
+        r_end   = st.session_state.get("res_de", max_d_r)
     r_start = max(min_d_r, min(max_d_r, r_start))
     r_end   = max(min_d_r, min(max_d_r, r_end))
     if r_start > r_end: r_start = r_end
 
-    dfr  = df_all[(df_all["Fecha"].dt.date >= r_start) & (df_all["Fecha"].dt.date <= r_end)].copy()
+    dfr  = df_combined[(df_combined["Fecha"].dt.date >= r_start) & (df_combined["Fecha"].dt.date <= r_end)].copy()
     dfrv = dfr[dfr["Gasto"].notna() & (dfr["Gasto"] > 0)].copy()
 
-    # KPIs
-    inv_ads_r   = float(dfrv["Gasto"].sum()) if "Gasto" in dfrv.columns and not dfrv.empty else 0.0
-    inv_bot_r   = parse_cop(summ.get("inv_bot","0")) or 0.0
+    # KPIs de inversión
+    inv_ads_r   = float(dfrv["Gasto"].sum())       if "Gasto"       in dfrv.columns and not dfrv.empty else 0.0
+    inv_bot_r   = float(dfrv["TG Tracking"].sum()) if "TG Tracking" in dfrv.columns and not dfrv.empty else 0.0
     total_inv_r = inv_ads_r + inv_bot_r
 
-    # Leads desde Telegram (entradas del período)
-    leads_tg_r = 0
+    # Entradas y salidas desde Telegram
+    entradas_tg_r = 0
+    salidas_tg_r  = 0
     if tg and "error" not in tg:
         df_growth_tg = tg.get("df_growth", pd.DataFrame())
-        if not df_growth_tg.empty and "entradas" in df_growth_tg.columns:
+        if not df_growth_tg.empty:
             dg_filt = df_growth_tg[
                 (df_growth_tg["fecha"].dt.date >= r_start) &
                 (df_growth_tg["fecha"].dt.date <= r_end)
             ]
-            leads_tg_r = int(dg_filt["entradas"].sum())
+            if "entradas" in df_growth_tg.columns:
+                entradas_tg_r = int(dg_filt["entradas"].sum())
+            if "salidas" in df_growth_tg.columns:
+                salidas_tg_r  = int(dg_filt["salidas"].sum())
 
-    cxl_ads_r = inv_ads_r   / leads_tg_r if leads_tg_r > 0 else None
-    cxl_gen_r = total_inv_r / leads_tg_r if leads_tg_r > 0 else None
+    registros_netos_r  = entradas_tg_r - salidas_tg_r
+    cxl_ads_r          = inv_ads_r   / entradas_tg_r    if entradas_tg_r    > 0 else None
+    cxl_gen_r          = total_inv_r / entradas_tg_r    if entradas_tg_r    > 0 else None
+    cxl_ads_neto_r     = inv_ads_r   / registros_netos_r if registros_netos_r > 0 else None
+    cxl_gen_neto_r     = total_inv_r / registros_netos_r if registros_netos_r > 0 else None
+    tasa_des_r         = (salidas_tg_r / entradas_tg_r * 100) if entradas_tg_r > 0 else None
 
     conv_web_r = None
     if "Conv Web" in dfrv.columns and dfrv["Conv Web"].notna().any():
         conv_web_r = dfrv["Conv Web"].mean()
 
-    st.markdown('<div class="slabel">Métricas principales</div>', unsafe_allow_html=True)
+    neto_lbl   = f"{'+'if registros_netos_r >= 0 else ''}{fmt_num(registros_netos_r)}"
+    neto_style = "gn" if registros_netos_r >= 0 else "pk"
 
-    rk1, rk2, rk3, rk4 = st.columns(4)
-    rk1.markdown(kcard("Inversión Ads",    fmt_cop(inv_ads_r),  "pu","pu"), unsafe_allow_html=True)
-    rk2.markdown(kcard("Inversión Bot TG", fmt_cop(inv_bot_r),  "plain"),   unsafe_allow_html=True)
-    rk3.markdown(kcard("Leads Telegram",
-        fmt_num(leads_tg_r) if leads_tg_r else "—", "cy","cy"), unsafe_allow_html=True)
-    rk4.markdown(kcard("Total Inversión",  fmt_cop(total_inv_r),"pu","pu"), unsafe_allow_html=True)
+    # ── Sección 1: Inversión ──────────────────────────────────────────────────
+    st.markdown('<div class="slabel">Inversión del período</div>', unsafe_allow_html=True)
 
-    st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+    rk1, rk2, rk3 = st.columns(3)
+    rk1.markdown(kcard("Inversión Ads",    fmt_cop(inv_ads_r),   "pu","pu"), unsafe_allow_html=True)
+    rk2.markdown(kcard("Inversión Bot TG", fmt_cop(inv_bot_r),   "plain"),   unsafe_allow_html=True)
+    rk3.markdown(kcard("Total Inversión",  fmt_cop(total_inv_r), "cy","cy"), unsafe_allow_html=True)
 
-    rk5, rk6, rk7, _ = st.columns(4)
-    rk5.markdown(kcard("CxLead Ads",
-        fmt_cop(cxl_ads_r) if cxl_ads_r is not None else "—", "pk","pk"), unsafe_allow_html=True)
-    rk6.markdown(kcard("CxLead General",
-        fmt_cop(cxl_gen_r) if cxl_gen_r is not None else "—", "pk","pk"), unsafe_allow_html=True)
-    rk7.markdown(kcard("Conv Web",
-        f"{conv_web_r:.2f}%" if conv_web_r is not None else "—", "gn","gn"), unsafe_allow_html=True)
+    # ── Sección 2: Canal Telegram ─────────────────────────────────────────────
+    st.markdown('<div class="slabel">Crecimiento del canal</div>', unsafe_allow_html=True)
+
+    rk4, rk5, rk6, rk7 = st.columns(4)
+    rk4.markdown(kcard("Entradas",
+        f"+{fmt_num(entradas_tg_r)}" if entradas_tg_r else "—", "gn","gn"), unsafe_allow_html=True)
+    rk5.markdown(kcard("Salidas",
+        f"-{fmt_num(salidas_tg_r)}" if salidas_tg_r else "—", "pk","pk"),   unsafe_allow_html=True)
+    rk6.markdown(kcard("Registros Netos", neto_lbl, neto_style, neto_style), unsafe_allow_html=True)
+    rk7.markdown(kcard("Tasa de Deserción",
+        f"{tasa_des_r:.1f}%" if tasa_des_r is not None else "—", "plain"),  unsafe_allow_html=True)
+
+    # ── Sección 3: Eficiencia ─────────────────────────────────────────────────
+    st.markdown('<div class="slabel">Eficiencia</div>', unsafe_allow_html=True)
+
+    rk8, rk9, rk10, rk11, rk12 = st.columns(5)
+    rk8.markdown(kcard("CxLead Ads (Sobre entradas)",
+        fmt_cop(cxl_ads_r) if cxl_ads_r is not None else "—",         "pk","pk"), unsafe_allow_html=True)
+    rk9.markdown(kcard("CxLead General (Sobre entradas)",
+        fmt_cop(cxl_gen_r) if cxl_gen_r is not None else "—",         "pk","pk"), unsafe_allow_html=True)
+    rk10.markdown(kcard("CxLead Ads (Neto)",
+        fmt_cop(cxl_ads_neto_r) if cxl_ads_neto_r is not None else "—","pk","pk"), unsafe_allow_html=True)
+    rk11.markdown(kcard("CxLead General (Neto)",
+        fmt_cop(cxl_gen_neto_r) if cxl_gen_neto_r is not None else "—","pk","pk"), unsafe_allow_html=True)
+    rk12.markdown(kcard("Conv Web",
+        f"{conv_web_r:.2f}%" if conv_web_r is not None else "—",       "gn","gn"), unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PESTAÑA 1 — REPORTE
@@ -601,12 +684,11 @@ with pg1:
 
     # ── FILTRO DE FECHAS ───────────────────────────────────────────────────────
     min_d = df_all["Fecha"].dt.date.min()
-    max_d = df_all["Fecha"].dt.date.max()
+    ayer  = date.today() - timedelta(days=1)
+    max_d = min(df_all["Fecha"].dt.date.max(), ayer)
 
     if "ds" not in st.session_state: st.session_state.ds = min_d
     if "de" not in st.session_state: st.session_state.de = max_d
-
-    ayer = date.today() - timedelta(days=1)
     OPCIONES = {
         "Todo el período":     (min_d, max_d),
         "Ayer":                (ayer, ayer),
@@ -676,7 +758,9 @@ with pg1:
 
     st.markdown("<div style='height:.8rem'></div>", unsafe_allow_html=True)
 
-    pct = min((gasto_act / inv_pauta * 100) if inv_pauta else 0, 100)
+    pauta_gastado = float(df_all["Gasto"].sum()) if "Gasto" in df_all.columns else 0.0
+    pauta_rest    = (inv_pauta - pauta_gastado) if inv_pauta else 0.0
+    pct = min((pauta_gastado / inv_pauta * 100) if inv_pauta else 0, 100)
     st.markdown(f"""
 <div class="prog-wrap">
   <div class="prog-row">
@@ -685,8 +769,8 @@ with pg1:
   </div>
   <div class="prog-track"><div class="prog-fill" style="width:{pct}%"></div></div>
   <div class="prog-stats">
-    <div class="ps"><span>Gastado</span><br><strong>{fmt_cop(gasto_act)}</strong></div>
-    <div class="ps" style="text-align:center"><span>Restante</span><br><strong>{fmt_cop(p_rest)}</strong></div>
+    <div class="ps"><span>Gastado</span><br><strong>{fmt_cop(pauta_gastado)}</strong></div>
+    <div class="ps" style="text-align:center"><span>Restante</span><br><strong>{fmt_cop(pauta_rest)}</strong></div>
     <div class="ps" style="text-align:right"><span>Total</span><br><strong>{fmt_cop(inv_pauta)}</strong></div>
   </div>
 </div>
@@ -800,9 +884,9 @@ with pg1:
                     font=dict(color=MUTED, size=10), bgcolor="rgba(0,0,0,0)")
     )
 
-    ct1, ct2, ct3, ct4, ct5 = st.tabs([
-        "📊 Gasto y Resultados", "💰 Costos", "📈 Tráfico y CTR",
-        "🎯 Ejecución vs Ideal", "📲 Telegram"
+    ct1, ct2, ct3, ct4 = st.tabs([
+        "📊 Gasto y Resultados", "💰 Costos Lead",
+        "🎯 Ejecución de Presupuesto", "📲 Telegram"
     ])
 
     with ct1:
@@ -856,38 +940,6 @@ with pg1:
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     with ct3:
-        fig = make_subplots(rows=1, cols=2,
-            subplot_titles=("Clics e Impresiones", "CTR Diario (%)"),
-            column_widths=[0.55, 0.45])
-        if "Clics" in dfv.columns:
-            fig.add_trace(go.Bar(
-                x=dfv["Fecha"], y=dfv["Clics"], name="Clics",
-                marker=dict(color=PURPLEL, opacity=0.85, line=dict(color="rgba(0,0,0,0)", width=0)),
-                hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f} clics</b><extra></extra>"
-            ), row=1, col=1)
-        if "Visitas Pag" in dfv.columns:
-            fig.add_trace(go.Scatter(
-                x=dfv["Fecha"], y=dfv["Visitas Pag"], name="Visitas Pág.",
-                line=dict(color=CYANL, width=2), mode="lines+markers",
-                marker=dict(size=4, color=CYANL),
-                hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f} visitas</b><extra></extra>"
-            ), row=1, col=1)
-        if "CTR" in dfv.columns:
-            fig.add_trace(go.Scatter(
-                x=dfv["Fecha"], y=dfv["CTR"], name="CTR %",
-                line=dict(color=GREEN, width=2.5),
-                fill="tozeroy", fillcolor="rgba(16,185,129,0.12)",
-                mode="lines+markers", marker=dict(size=5, color=GREEN, line=dict(color=BG, width=1.5)),
-                hovertemplate="%{x|%d/%m}<br><b>%{y:.2f}%</b><extra>CTR</extra>"
-            ), row=1, col=2)
-        fig.update_layout(**BASE, title=dict(text="Tráfico y Tasa de Clics",
-            font=dict(color=WHITE, size=13, weight=700)))
-        fig.update_xaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
-        fig.update_yaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
-        for ann in fig.layout.annotations: ann.font.color = MUTED; ann.font.size = 11
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-
-    with ct4:
         fig = go.Figure()
         df_exec = df_all[df_all["Ideal Gasto"].notna()].copy()
         df_real = df_all[df_all["Gasto Real"].notna() & (df_all["Gasto Real"] > 0)].copy()
@@ -917,7 +969,7 @@ with pg1:
             font=dict(color=WHITE, size=13, weight=700)))
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    with ct5:
+    with ct4:
         fig = make_subplots(rows=1, cols=2,
             subplot_titles=("TG Tracking diario ($)", "Meta Telegram acumulada vs Real"),
             column_widths=[0.45, 0.55])
@@ -929,23 +981,24 @@ with pg1:
                 marker=dict(color=tg_colors, opacity=0.85, line=dict(color="rgba(0,0,0,0)", width=0)),
                 hovertemplate="%{x|%d/%m}<br><b>$%{y:,.0f}</b><extra>TG Tracking</extra>"
             ), row=1, col=1)
-        df_tg   = df_all[df_all["Meta Telegram"].notna()].copy()
-        df_tg_r = df_all[df_all["Meta VS Real"].notna()].copy()
+        df_tg = df_all[df_all["Meta Telegram"].notna()].copy()
         if len(df_tg) > 0:
             fig.add_trace(go.Scatter(
-                x=df_tg["Fecha"], y=df_tg["Meta Telegram"], name="Meta TG",
+                x=df_tg["Fecha"], y=df_tg["Meta Telegram"], name="Meta",
                 line=dict(color=MUTED2, width=2, dash="dash"),
                 hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f}</b><extra>Meta</extra>"
             ), row=1, col=2)
-        if len(df_tg_r) > 0:
-            col_mv = [GREEN if v >= 0 else RED for v in df_tg_r["Meta VS Real"]]
+        df_real_tg = df_all[df_all["Resultado"].notna() & (df_all["Resultado"] > 0)].copy()
+        if len(df_real_tg) > 0:
+            df_real_tg = df_real_tg.sort_values("Fecha")
+            df_real_tg["Real acumulado"] = df_real_tg["Resultado"].cumsum()
             fig.add_trace(go.Scatter(
-                x=df_tg_r["Fecha"], y=df_tg_r["Meta VS Real"], name="Meta VS Real",
+                x=df_real_tg["Fecha"], y=df_real_tg["Real acumulado"], name="Real",
                 line=dict(color=CYANL, width=2.5), mode="lines+markers",
-                marker=dict(size=5, color=col_mv, line=dict(color=BG, width=1)),
-                hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f}</b><extra>VS Real</extra>"
+                marker=dict(size=5, color=CYANL, line=dict(color=BG, width=1)),
+                hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f}</b><extra>Real</extra>"
             ), row=1, col=2)
-        fig.update_layout(**BASE, title=dict(text="Seguimiento Telegram",
+        fig.update_layout(**BASE, title=dict(text="Gasto Bot",
             font=dict(color=WHITE, size=13, weight=700)))
         fig.update_xaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
         fig.update_yaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
@@ -1341,17 +1394,15 @@ with pg3:
                     if "tg_g_end" not in st.session_state:
                         st.session_state.tg_g_end   = gmax
 
-                    hoy = date.today()
                     OPCIONES_G = {
-                        "Hoy":             (hoy, hoy),
-                        "Ayer":            (hoy - timedelta(days=1), hoy - timedelta(days=1)),
+                        "Ayer":            (gmax, gmax),
                         "Últimos 7 días":  (gmax - timedelta(days=6),  gmax),
                         "Últimos 14 días": (gmax - timedelta(days=13), gmax),
                         "Últimos 28 días": (gmax - timedelta(days=27), gmax),
                         "Últimos 30 días": (gmax - timedelta(days=29), gmax),
                         "Últimos 60 días": (gmax - timedelta(days=59), gmax),
                         "Últimos 90 días": (gmax - timedelta(days=89), gmax),
-                        "Este mes":        (hoy.replace(day=1), gmax),
+                        "Este mes":        (date.today().replace(day=1), gmax),
                         "Todo el período": (gmin, gmax),
                         "Personalizado":   (st.session_state.tg_g_start, st.session_state.tg_g_end),
                     }
