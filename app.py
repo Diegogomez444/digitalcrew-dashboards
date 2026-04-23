@@ -510,23 +510,49 @@ pg0, pg1, pg2, pg3 = st.tabs(["📊  Resumen", "📅  Mes Actual", "📘  Meta A
 components.html("""
 <script>
 (function() {
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
-    async function initTabs() {
-        await sleep(400);
-        const tabs = parent.document.querySelectorAll('[data-baseweb="tab"]');
-        if (!tabs.length) return;
-        const saved = sessionStorage.getItem('dc_active_tab');
-        if (saved !== null && tabs[parseInt(saved)]) {
-            tabs[parseInt(saved)].click();
-        }
-        tabs.forEach((tab, i) => {
-            tab.addEventListener('click', () => sessionStorage.setItem('dc_active_tab', String(i)));
-        });
+    const KEY = 'dc_main_tab';
+    const doc = parent.document;
+
+    function getMainTabs() {
+        // Only use the FIRST tab-list on the page (main tabs, not sub-tabs)
+        const list = doc.querySelector('[data-baseweb="tab-list"]');
+        if (!list) return [];
+        return Array.from(list.querySelectorAll('[data-baseweb="tab"]'));
     }
-    initTabs();
+
+    function run() {
+        const tabs = getMainTabs();
+        if (!tabs.length) return false;
+
+        // Save index when user clicks a main tab
+        tabs.forEach((tab, i) => {
+            if (!tab._dcBound) {
+                tab._dcBound = true;
+                tab.addEventListener('click', () => sessionStorage.setItem(KEY, String(i)));
+            }
+        });
+
+        // Restore saved tab only if it's not already active
+        const saved = sessionStorage.getItem(KEY);
+        if (saved === null) return true;
+        const idx = parseInt(saved);
+        if (idx < 0 || idx >= tabs.length) return true;
+        const alreadyActive = tabs[idx].getAttribute('aria-selected') === 'true';
+        if (!alreadyActive) {
+            tabs[idx].click();
+        }
+        return true;
+    }
+
+    // Retry until DOM is ready
+    function attempt(n) {
+        if (n <= 0) return;
+        if (!run()) setTimeout(() => attempt(n - 1), 300);
+    }
+    setTimeout(() => attempt(5), 200);
 })();
 </script>
-""", height=0)
+""", height=1)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PESTAÑA 0 — RESUMEN
