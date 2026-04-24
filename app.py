@@ -9,6 +9,11 @@ import io
 import os
 import json
 import html as _html
+try:
+    import anthropic as _anthropic
+    _HAS_ANTHROPIC = True
+except ImportError:
+    _HAS_ANTHROPIC = False
 
 # ── CONFIG ─────────────────────────────────────────────────────────────────────
 try:
@@ -640,7 +645,7 @@ with c_btn:
 tg = load_telegram_data()
 
 # ── PESTAÑAS PRINCIPALES ───────────────────────────────────────────────────────
-pg0, pg1, pg2, pg3 = st.tabs(["📊  Resumen", "📅  Mes Actual", "📘  Meta Ads", "📲  Telegram"])
+pg0, pg1, pg2, pg3, pg4 = st.tabs(["📊  Resumen", "📅  Mes Actual", "📘  Meta Ads", "📲  Telegram", "🤖  IA"])
 
 components.html("""
 <script>
@@ -2542,6 +2547,252 @@ with pg3:
             sa1.markdown(kcard("Suscriptores actuales", fmt_num(stats.get("subs_actual", subs)), "pu","pu"), unsafe_allow_html=True)
             sa2.markdown(kcard("Suscriptores anterior", fmt_num(stats.get("subs_anterior",0)), "plain"), unsafe_allow_html=True)
             sa3.markdown(kcard("Vistas prom./post",     str(stats.get("vistas_post","—")), "cy","cy"), unsafe_allow_html=True)
+
+# ── PESTAÑA IA ────────────────────────────────────────────────────────────────
+def _build_ia_context(reports, tg_data):
+    """Construye un resumen de datos para enviar a Claude."""
+    lines = []
+
+    # ── META ADS ──────────────────────────────────────────────────────────────
+    if reports:
+        lines.append("=== META ADS ===")
+        for r in reports:
+            df_r = r["df"]; c = r["cols"]
+            lines.append(f"\nReporte: {r['name']}")
+            if r.get("date_start"): lines.append(f"Período: {r['date_start']} → {r['date_end']}")
+
+            def _col_sum(k):
+                col = c.get(k)
+                return float(df_r[col].sum()) if col and col in df_r.columns else 0.0
+            def _col_mean(k):
+                col = c.get(k)
+                return float(df_r[col].mean()) if col and col in df_r.columns else 0.0
+
+            spend    = _col_sum("spend")
+            results  = _col_sum("results")
+            cpr      = spend / results if results > 0 else 0
+            ctr      = _col_mean("ctr")
+            impr     = _col_sum("impressions")
+            freq     = _col_mean("frequency")
+            v3s      = _col_sum("video_3s")
+            hook_r   = (v3s / impr * 100) if impr > 0 else 0
+            v100     = _col_sum("video_p100")
+            compl    = (v100 / v3s * 100) if v3s > 0 else 0
+
+            lines.append(f"Inversión total: ${spend:,.0f}")
+            lines.append(f"Resultados: {results:,.0f} | CPR: ${cpr:,.0f} | CTR: {ctr:.2f}%")
+            lines.append(f"Impresiones: {impr:,.0f} | Frecuencia: {freq:.1f}")
+            if hook_r: lines.append(f"Hook rate promedio: {hook_r:.1f}% | Tasa completación video: {compl:.1f}%")
+
+            # Top campañas
+            if c.get("campaign") and c["campaign"] in df_r.columns:
+                agg = df_r.groupby(c["campaign"]).agg(
+                    spend=(c["spend"], "sum"), results=(c["results"], "sum")
+                ).assign(cpr=lambda x: x["spend"] / x["results"].replace(0, np.nan))
+                top3 = agg.nsmallest(3, "cpr")
+                lines.append("Top 3 campañas (menor CPR):")
+                for nm, row in top3.iterrows():
+                    lines.append(f"  • {str(nm)[:60]}: CPR ${row['cpr']:,.0f}, resultados {row['results']:,.0f}")
+
+            # Top anuncios por hook
+            if c.get("ad") and c.get("video_3s") and c.get("impressions"):
+                df_tmp = df_r.copy()
+                df_tmp["__hook__"] = df_tmp[c["video_3s"]] / df_tmp[c["impressions"]].replace(0, np.nan) * 100
+                top_h = df_tmp.nlargest(3, "__hook__")[[c["ad"], "__hook__"]].dropna()
+                lines.append("Top anuncios por hook rate:")
+                for _, row in top_h.iterrows():
+                    lines.append(f"  • {str(row[c['ad']])[:60]}: {row['__hook__']:.1f}%")
+
+    else:
+        lines.append("=== META ADS === (sin reportes cargados)")
+
+    # ── TELEGRAM ──────────────────────────────────────────────────────────────
+    lines.append("\n=== TELEGRAM ===")
+    if "error" not in tg_data:
+        df_tg  = tg_data.get("df_msg", pd.DataFrame())
+        subs   = tg_data.get("subscribers", 0)
+        stats  = tg_data.get("stats", {})
+        df_grw = tg_data.get("df_growth", pd.DataFrame())
+
+        lines.append(f"Suscriptores actuales: {subs:,}")
+        if not df_tg.empty:
+            lines.append(f"Posts analizados: {len(df_tg)}")
+            lines.append(f"Vistas promedio: {df_tg['vistas'].mean():.0f} | Máximo: {df_tg['vistas'].max():,.0f}")
+
+            # Tendencia últimas 4 semanas vs anteriores
+            df_s = df_tg.sort_values("fecha")
+            if len(df_s) >= 20:
+                rec  = df_s.tail(min(40, len(df_s)//2))["vistas"].mean()
+                prev = df_s.head(min(40, len(df_s)//2))["vistas"].mean()
+                trend_dir = "↑ en aumento" if rec > prev * 1.05 else ("↓ en descenso" if rec < prev * 0.95 else "→ estable")
+                lines.append(f"Tendencia de vistas: {trend_dir} ({rec:.0f} reciente vs {prev:.0f} anterior)")
+
+            # Frecuencia de publicación por semana
+            if "semana" in df_tg.columns:
+                ppw = df_tg.groupby("semana")["id"].count()
+                lines.append(f"Posts/semana: prom {ppw.mean():.1f}, mín {ppw.min()}, máx {ppw.max()}")
+                # Semanas con más vistas
+                vxsem = df_tg.groupby("semana")["vistas"].mean().sort_values(ascending=False).head(3)
+                lines.append("Semanas con más vistas promedio:")
+                for sem, v in vxsem.items():
+                    posts_sem = ppw.get(sem, 0)
+                    lines.append(f"  • Semana {sem}: {v:.0f} vistas prom | {posts_sem} posts publicados")
+
+            # Top 5 posts
+            top5 = df_tg.nlargest(5, "vistas")
+            lines.append("Top 5 posts por vistas:")
+            for _, row in top5.iterrows():
+                txt = str(row.get("texto","")).strip()[:100] or "(sin texto/multimedia)"
+                has_media = "📷" if row.get("tiene_media") else "💬"
+                lines.append(f"  • {has_media} {row['vistas']:,} vistas | {txt}")
+
+            # Posts con texto vs sin texto
+            con_txt = df_tg[df_tg["texto"].str.strip().astype(bool)]
+            sin_txt = df_tg[~df_tg["texto"].str.strip().astype(bool)]
+            if len(con_txt) and len(sin_txt):
+                lines.append(f"Vistas prom posts con texto: {con_txt['vistas'].mean():.0f}")
+                lines.append(f"Vistas prom posts solo multimedia: {sin_txt['vistas'].mean():.0f}")
+
+        # Crecimiento
+        if not df_grw.empty:
+            neto_total = int(df_grw["net"].sum()) if "net" in df_grw.columns else 0
+            lines.append(f"Crecimiento neto suscriptores: {'+'if neto_total>=0 else ''}{neto_total:,}")
+    else:
+        lines.append(f"Sin datos de Telegram: {tg_data.get('error','')}")
+
+    return "\n".join(lines)
+
+
+def _run_ia_analysis(context_text, api_key):
+    """Llama a Claude y retorna el texto de análisis completo."""
+    client = _anthropic.Anthropic(api_key=api_key)
+    prompt = f"""Eres un analista experto en marketing digital, crecimiento de canales de Telegram y publicidad en Meta Ads (Facebook/Instagram). Analiza los siguientes datos reales de un cliente y genera un informe completo en español.
+
+DATOS DEL CLIENTE:
+{context_text}
+
+Genera un análisis estructurado con estas secciones exactas (usa los emojis y encabezados indicados):
+
+## 🎯 Resumen Ejecutivo
+2-3 conclusiones clave sobre el estado general del canal y la pauta.
+
+## 📊 Análisis Meta Ads
+- Qué campañas/anuncios están funcionando mejor y por qué
+- Tendencia del CPR y CTR
+- Calidad creativa (hook rate, completación de video si hay datos)
+- Alertas si el CPR es alto o el CTR bajo
+
+## 📲 Análisis Telegram
+- Tendencia de vistas y qué la explica
+- Qué tipo de contenido genera más vistas (texto vs multimedia, temas)
+- Frecuencia de publicación: ¿es suficiente? ¿hay semanas donde publicar más mejoró las vistas?
+- Estado del crecimiento de suscriptores
+
+## 🔗 Correlaciones Detectadas
+Encuentra relaciones entre Meta Ads y Telegram: por ejemplo, si en semanas con más pauta el canal creció más, o si hay períodos donde pese a la pauta el canal no creció (posible problema de contenido). Sé específico con los números.
+
+## 🎬 Qué Tipo de Contenido Funciona Mejor
+Basado en los top posts: ¿qué tienen en común? ¿qué temáticas o formatos llaman más la atención? ¿qué debería publicarse más?
+
+## ⚡ Acciones Prioritarias
+Lista de 5 acciones concretas y ordenadas por impacto, con explicación de por qué cada una mejorará los resultados. Distingue entre acciones de pauta y de contenido orgánico.
+
+Sé directo, usa números reales del informe, y no uses frases genéricas. Si detectas algo bueno, destacalo. Si detectas un problema, nombra el problema y da la solución específica."""
+
+    result = ""
+    with client.messages.stream(
+        model="claude-sonnet-4-6",
+        max_tokens=2500,
+        messages=[{"role": "user", "content": prompt}]
+    ) as stream:
+        for text in stream.text_stream:
+            result += text
+    return result
+
+
+with pg4:
+    st.markdown(f"""
+<div style="background:linear-gradient(135deg,{CARD2} 0%,{CARD} 100%);
+  border:1px solid {BORDER};border-radius:16px;padding:1.4rem 1.6rem;margin-bottom:1.2rem">
+  <div style="font-size:1.05rem;font-weight:800;color:{WHITE};letter-spacing:.05em;margin-bottom:.3rem">
+    🤖 Análisis con Inteligencia Artificial
+  </div>
+  <div style="font-size:.78rem;color:{MUTED};line-height:1.7">
+    Claude analiza en conjunto todos tus datos de <strong style="color:{CYANL}">Meta Ads</strong>
+    y <strong style="color:{PURPLEL}">Telegram</strong> para encontrar correlaciones, detectar
+    qué contenido funciona mejor, y darte acciones concretas para crecer el canal y bajar el costo por suscriptor.
+  </div>
+</div>""", unsafe_allow_html=True)
+
+    # Verificar API key
+    _ant_key = st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else ""
+    if not _HAS_ANTHROPIC:
+        st.error("Librería `anthropic` no instalada. Agrega `anthropic>=0.40.0` a requirements.txt y redespliega.")
+    elif not _ant_key:
+        st.markdown(f"""
+<div style="background:{CARD2};border:1px dashed {AMBER};border-radius:12px;padding:1.2rem 1.4rem">
+  <div style="color:{AMBER};font-weight:700;font-size:.85rem;margin-bottom:.5rem">⚠️ API Key no configurada</div>
+  <div style="color:{MUTED};font-size:.77rem;line-height:1.8">
+    Para activar el análisis IA, agrega tu clave de Anthropic en los secretos de Streamlit Cloud:<br>
+    <code style="background:{BORDER};padding:.15rem .4rem;border-radius:4px;color:{WHITE}">ANTHROPIC_API_KEY = "sk-ant-..."</code>
+  </div>
+</div>""", unsafe_allow_html=True)
+    else:
+        # Construir contexto de datos
+        _ia_reports = st.session_state.get("meta_reports", [])
+        _ia_context = _build_ia_context(_ia_reports, tg)
+
+        # Mostrar resumen de datos disponibles
+        _n_rep = len(_ia_reports)
+        _tg_ok = "error" not in tg and not tg.get("df_msg", pd.DataFrame()).empty
+        st.markdown(f"""
+<div style="display:flex;gap:.8rem;margin-bottom:1rem;flex-wrap:wrap">
+  <div style="background:{CARD2};border:1px solid {'#22c55e44' if _n_rep>0 else BORDER};border-radius:10px;padding:.55rem 1rem;font-size:.74rem">
+    {'✅' if _n_rep>0 else '⬜'} <strong style="color:{WHITE if _n_rep>0 else MUTED}">Meta Ads</strong>
+    <span style="color:{MUTED}"> · {_n_rep} reporte{'s' if _n_rep!=1 else ''}</span>
+  </div>
+  <div style="background:{CARD2};border:1px solid {'#22c55e44' if _tg_ok else BORDER};border-radius:10px;padding:.55rem 1rem;font-size:.74rem">
+    {'✅' if _tg_ok else '⬜'} <strong style="color:{WHITE if _tg_ok else MUTED}">Telegram</strong>
+    <span style="color:{MUTED}"> · {'datos disponibles' if _tg_ok else 'sin datos'}</span>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+        ia_col1, ia_col2 = st.columns([2, 1])
+        with ia_col1:
+            if st.button("🤖  Generar análisis completo", type="primary", use_container_width=True,
+                         help="Llama a Claude para analizar todos los datos en conjunto"):
+                with st.spinner("Claude está analizando tus datos..."):
+                    try:
+                        _result = _run_ia_analysis(_ia_context, _ant_key)
+                        st.session_state["ia_result"] = _result
+                        st.session_state["ia_ts"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+                    except Exception as _e:
+                        st.error(f"Error al llamar a la API: {_e}")
+
+        with ia_col2:
+            if "ia_result" in st.session_state:
+                st.markdown(f"<div style='font-size:.68rem;color:{MUTED};padding-top:.6rem;text-align:right'>"
+                            f"Último análisis: {st.session_state.get('ia_ts','—')}</div>",
+                            unsafe_allow_html=True)
+
+        # Mostrar resultado
+        if "ia_result" in st.session_state:
+            st.markdown("<div style='height:.4rem'></div>", unsafe_allow_html=True)
+            st.markdown(f"""
+<div style="background:{CARD2};border:1px solid {BORDER};border-radius:14px;
+  padding:1.5rem 1.8rem;line-height:1.75;font-size:.82rem">""",
+                unsafe_allow_html=True)
+            st.markdown(st.session_state["ia_result"])
+            st.markdown("</div>", unsafe_allow_html=True)
+        elif _n_rep == 0 and not _tg_ok:
+            st.markdown(f"""
+<div style="background:{CARD};border:1px dashed {BORDER};border-radius:12px;
+  padding:1.5rem;text-align:center;margin-top:.5rem">
+  <div style="font-size:2rem;margin-bottom:.5rem">📭</div>
+  <div style="color:{MUTED};font-size:.8rem">
+    No hay datos aún. Sube un reporte de Meta Ads o conecta Telegram para que la IA pueda analizar.
+  </div>
+</div>""", unsafe_allow_html=True)
 
 # ── FOOTER ─────────────────────────────────────────────────────────────────────
 st.markdown(f"""
