@@ -120,6 +120,26 @@ META_COL = {
     "campaign":    ["nombre de la campaña","nombre de campaña","campaign name","campaña"],
     "adset":       ["nombre del conjunto de anuncios","conjunto de anuncios","ad set name","adset"],
     "ad":          ["nombre del anuncio","anuncio","ad name","ad"],
+    # Video metrics
+    "video_plays": ["reproducciones de video","reproducciones de vídeo","video plays",
+                    "reproduccion de video","reproducciones"],
+    "video_3s":    ["reproducciones de vídeo de al menos 3 segundos",
+                    "reproducciones de video de al menos 3 segundos",
+                    "3-second video plays","video reproducido 3 segundos",
+                    "reproducciones de video de 3 segundos"],
+    "video_p25":   ["porcentaje de reproducción del video al 25%","video plays at 25%",
+                    "video watched at 25%","video visto al 25%"],
+    "video_p50":   ["porcentaje de reproducción del video al 50%","video plays at 50%",
+                    "video watched at 50%","video visto al 50%"],
+    "video_p75":   ["porcentaje de reproducción del video al 75%","video plays at 75%",
+                    "video watched at 75%","video visto al 75%"],
+    "video_p100":  ["porcentaje de reproducción del video al 100%","video plays at 100%",
+                    "video watched at 100%","video visto al 100%"],
+    "thruplay":    ["thruplays","thruplay","reproducciones completas"],
+    "cpm":         ["cpm (coste por 1.000 impresiones)","cpm (cost per 1,000 impressions)",
+                    "cpm","coste por 1000 impresiones","costo por 1000 impresiones"],
+    "cpp":         ["costo por clic en el enlace","coste por clic en el enlace",
+                    "cost per link click","cpc","coste por clic"],
 }
 SKIP_VALS = {"","nan","total de la cuenta","totales","total","reporting ends","informe terminado"}
 
@@ -1197,7 +1217,9 @@ def _load_reports_disk() -> list:
                 meta = json.load(f)
             df = pd.read_csv(csv_path, keep_default_na=False)
             # Re-aplicar conversión numérica a columnas de métricas
-            num_keys = ("spend", "results", "cpr", "impressions", "clicks", "ctr", "reach", "freq")
+            num_keys = ("spend","results","cpr","impressions","clicks","ctr","reach","freq",
+                        "video_plays","video_3s","video_p25","video_p50","video_p75",
+                        "video_p100","thruplay","cpm","cpp")
             for k in num_keys:
                 col = meta.get("cols", {}).get(k)
                 if col and col in df.columns:
@@ -1287,20 +1309,31 @@ with pg2:
                 df_up = pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False)
             df_up.columns = [str(c).strip() for c in df_up.columns]
 
-            col_spend   = find_col(df_up, "spend")
-            col_results = find_col(df_up, "results")
-            col_cpr     = find_col(df_up, "cpr")
-            col_impr    = find_col(df_up, "impressions")
-            col_clicks  = find_col(df_up, "clicks")
-            col_ctr     = find_col(df_up, "ctr")
-            col_reach   = find_col(df_up, "reach")
-            col_freq    = find_col(df_up, "frequency")
-            col_camp    = find_col(df_up, "campaign")
-            col_adset   = find_col(df_up, "adset")
-            col_ad      = find_col(df_up, "ad")
+            col_spend     = find_col(df_up, "spend")
+            col_results   = find_col(df_up, "results")
+            col_cpr       = find_col(df_up, "cpr")
+            col_impr      = find_col(df_up, "impressions")
+            col_clicks    = find_col(df_up, "clicks")
+            col_ctr       = find_col(df_up, "ctr")
+            col_reach     = find_col(df_up, "reach")
+            col_freq      = find_col(df_up, "frequency")
+            col_camp      = find_col(df_up, "campaign")
+            col_adset     = find_col(df_up, "adset")
+            col_ad        = find_col(df_up, "ad")
+            col_vplays    = find_col(df_up, "video_plays")
+            col_v3s       = find_col(df_up, "video_3s")
+            col_vp25      = find_col(df_up, "video_p25")
+            col_vp50      = find_col(df_up, "video_p50")
+            col_vp75      = find_col(df_up, "video_p75")
+            col_vp100     = find_col(df_up, "video_p100")
+            col_thruplay  = find_col(df_up, "thruplay")
+            col_cpm       = find_col(df_up, "cpm")
+            col_cpp       = find_col(df_up, "cpp")
 
             for c in [col_spend, col_results, col_cpr, col_impr,
-                      col_clicks, col_ctr, col_reach, col_freq]:
+                      col_clicks, col_ctr, col_reach, col_freq,
+                      col_vplays, col_v3s, col_vp25, col_vp50,
+                      col_vp75, col_vp100, col_thruplay, col_cpm, col_cpp]:
                 if c:
                     df_up[c] = df_up[c].apply(parse_meta_num)
 
@@ -1327,7 +1360,11 @@ with pg2:
                 "cols": dict(spend=col_spend, results=col_results, cpr=col_cpr,
                              impressions=col_impr, clicks=col_clicks, ctr=col_ctr,
                              reach=col_reach, freq=col_freq,
-                             campaign=col_camp, adset=col_adset, ad=col_ad)
+                             campaign=col_camp, adset=col_adset, ad=col_ad,
+                             video_plays=col_vplays, video_3s=col_v3s,
+                             video_p25=col_vp25, video_p50=col_vp50,
+                             video_p75=col_vp75, video_p100=col_vp100,
+                             thruplay=col_thruplay, cpm=col_cpm, cpp=col_cpp)
             }
             # Reemplazar si ya existe mismo archivo
             _delete_report_disk(uploaded_file.name)
@@ -1399,20 +1436,117 @@ with pg2:
             "📈 Tendencias", "🏆 Campañas", "👥 Públicos", "🎨 Anuncios", "🔍 Diagnóstico"
         ])
 
+        # ── Helpers de visualización ──────────────────────────────────────────
+        def _trunc(s, n=32):
+            s = str(s); return s[:n]+"…" if len(s) > n else s
+
+        COLORS_PIE = [PURPLE, CYANL, GREEN, PINK, PURPLEL, AMBER, "#9B59B6", "#1ABC9C"]
+
+        def _podium(items, val_label="resultados", val_fmt="{:,.0f}", color=CYANL):
+            medals = ["🥇", "🥈", "🥉"]
+            mc_list = [AMBER, "#C0C0C0", "#CD7F32"]
+            cols_p = st.columns(min(len(items), 3))
+            for idx, (col_p, (nm, vl)) in enumerate(zip(cols_p, items[:3])):
+                mc = mc_list[idx]
+                col_p.markdown(f"""
+<div style="background:{CARD2};border:1px solid {mc}55;border-radius:14px;
+  padding:1rem .8rem;text-align:center">
+  <div style="font-size:1.6rem;line-height:1">{medals[idx]}</div>
+  <div style="color:{mc};font-size:.68rem;font-weight:700;letter-spacing:.05em;
+    margin:.2rem 0">PUESTO #{idx+1}</div>
+  <div style="color:{WHITE};font-size:.73rem;font-weight:600;line-height:1.45;
+    min-height:2.8rem;display:flex;align-items:center;justify-content:center">
+    {_trunc(nm, 32)}</div>
+  <div style="color:{color};font-size:1.15rem;font-weight:800;margin-top:.5rem">
+    {val_fmt.format(vl)}</div>
+  <div style="color:{MUTED};font-size:.64rem;margin-top:.1rem">{val_label}</div>
+</div>""", unsafe_allow_html=True)
+
+        def _hbar(df_plot, x_col, y_col, title, fmt_hover,
+                  color_lo=PURPLE, color_hi=CYANL, xsuffix="", invert=False, h=300):
+            df_s = df_plot.copy()
+            df_s[y_col] = df_s[y_col].apply(lambda x: _trunc(x, 36))
+            df_s = (df_s.sort_values(x_col, ascending=False).head(10)
+                    if invert else
+                    df_s.sort_values(x_col, ascending=True).tail(10))
+            fig = go.Figure(go.Bar(
+                x=df_s[x_col], y=df_s[y_col], orientation="h",
+                marker=dict(color=df_s[x_col].values,
+                    colorscale=[[0, color_lo], [1, color_hi]], opacity=0.9),
+                hovertemplate=f"<b>%{{y}}</b><br>{fmt_hover}<extra></extra>"
+            ))
+            fig.update_layout(**{**BASE_MA, "height": h},
+                title=dict(text=title, font=dict(color=WHITE, size=13, weight=700)),
+                xaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9),
+                           ticksuffix=xsuffix),
+                yaxis=dict(tickfont=dict(color=WHITE, size=9)))
+            return fig
+
+        def _donut(df_plot, name_col, val_col, title=""):
+            df_d = (df_plot[[name_col, val_col]].dropna()
+                    .query(f"`{val_col}` > 0")
+                    .sort_values(val_col, ascending=False).head(8)).copy()
+            df_d[name_col] = df_d[name_col].apply(lambda x: _trunc(x, 26))
+            fig = go.Figure(go.Pie(
+                labels=df_d[name_col], values=df_d[val_col], hole=0.45,
+                marker=dict(colors=COLORS_PIE),
+                textfont=dict(color=WHITE, size=10),
+                hovertemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>"
+            ))
+            fig.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)", height=280,
+                margin=dict(l=10, r=10, t=30, b=10),
+                title=dict(text=title, font=dict(color=WHITE, size=12)),
+                legend=dict(font=dict(color=MUTED, size=9), bgcolor="rgba(0,0,0,0)"),
+                font=dict(family="Inter", color=MUTED)
+            )
+            return fig
+
+        def _build_agg(reps, name_key):
+            if not reps: return None, None, None
+            dfs = []
+            for r in reps:
+                df_r = r["df"].copy(); df_r["__mes__"] = r.get("month_label", "")
+                dfs.append(df_r)
+            df_all = pd.concat(dfs, ignore_index=True)
+            c0 = reps[0]["cols"]
+            col_name = c0.get(name_key)
+            if not col_name: return None, None, None
+            agg_d = {}
+            for k in ["spend","results","impressions","clicks","video_plays",
+                      "video_3s","video_p25","video_p50","video_p75","video_p100","thruplay"]:
+                if c0.get(k) and c0[k] in df_all.columns: agg_d[c0[k]] = "sum"
+            for k in ["ctr","cpm","cpp","frequency"]:
+                if c0.get(k) and c0[k] in df_all.columns: agg_d[c0[k]] = "mean"
+            if not agg_d: return df_all, c0, None
+            df_g = df_all.groupby(col_name).agg(agg_d).reset_index()
+            if c0.get("spend") and c0.get("results") and c0["results"] in df_g.columns:
+                df_g["__cpr__"] = df_g[c0["spend"]] / df_g[c0["results"]].replace(0, np.nan)
+            if c0.get("video_3s") and c0.get("impressions") and c0["video_3s"] in df_g.columns:
+                df_g["__hook_rate__"] = (df_g[c0["video_3s"]] /
+                                         df_g[c0["impressions"]].replace(0, np.nan) * 100)
+            if c0.get("video_p100") and c0.get("video_3s") and c0["video_p100"] in df_g.columns:
+                df_g["__completion__"] = (df_g[c0["video_p100"]] /
+                                          df_g[c0["video_3s"]].replace(0, np.nan) * 100)
+            return df_all, c0, df_g
+
         # ── TENDENCIAS ────────────────────────────────────────────────────────
         with ma1:
             monthly = []
             for r in sorted(reports, key=lambda x: x.get("month", "")):
                 c = r["cols"]; df_r = r["df"]
-                sp = float(df_r[c["spend"]].sum())   if c["spend"]        else np.nan
-                rs = float(df_r[c["results"]].sum()) if c["results"]      else np.nan
-                im = float(df_r[c["impressions"]].sum()) if c["impressions"] else np.nan
-                cp = float(df_r[c["cpr"]].mean())    if c["cpr"]          else (sp/rs if rs else np.nan)
-                ct = float(df_r[c["ctr"]].mean())    if c["ctr"]          else np.nan
-                monthly.append({"Mes": r.get("month_label", r.get("month","")),
-                                 "MesKey": r.get("month",""),
-                                 "Inversión": sp, "Resultados": rs,
-                                 "CPR": cp, "CTR": ct, "Impresiones": im})
+                sp = float(df_r[c["spend"]].sum())       if c.get("spend")       else np.nan
+                rs = float(df_r[c["results"]].sum())     if c.get("results")     else np.nan
+                im = float(df_r[c["impressions"]].sum()) if c.get("impressions") else np.nan
+                cp = float(df_r[c["cpr"]].mean())        if c.get("cpr")         else (sp/rs if rs else np.nan)
+                ct = float(df_r[c["ctr"]].mean())        if c.get("ctr")         else np.nan
+                cm = float(df_r[c["cpm"]].mean())        if c.get("cpm")         else (sp/im*1000 if im else np.nan)
+                monthly.append({
+                    "Mes": r.get("month_label", r.get("month", "")),
+                    "MesKey": r.get("month", ""),
+                    "Inversión": sp, "Resultados": rs,
+                    "CPR": cp, "CTR": ct, "Impresiones": im, "CPM": cm
+                })
             df_mon = pd.DataFrame(monthly).sort_values("MesKey").reset_index(drop=True)
 
             if len(df_mon) < 2:
@@ -1421,8 +1555,9 @@ with pg2:
                 tc1, tc2 = st.columns(2)
                 with tc1:
                     fig_t1 = go.Figure(go.Bar(
-                        x=df_mon["Mes"], y=df_mon["Inversión"], name="Inversión",
-                        marker_color=PURPLE, opacity=0.85,
+                        x=df_mon["Mes"], y=df_mon["Inversión"],
+                        marker=dict(color=df_mon["Inversión"].values,
+                            colorscale=[[0, PURPLE], [1, PURPLEL]], opacity=0.9),
                         hovertemplate="<b>%{x}</b><br>$%{y:,.0f}<extra></extra>"
                     ))
                     fig_t1.update_layout(**BASE_MA,
@@ -1430,11 +1565,11 @@ with pg2:
                         xaxis=dict(tickfont=dict(color=WHITE,size=9)),
                         yaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9)))
                     st.plotly_chart(fig_t1, use_container_width=True, config={"displayModeBar":False})
-
                 with tc2:
                     fig_t2 = go.Figure(go.Bar(
-                        x=df_mon["Mes"], y=df_mon["Resultados"], name="Resultados",
-                        marker_color=CYANL, opacity=0.85,
+                        x=df_mon["Mes"], y=df_mon["Resultados"],
+                        marker=dict(color=df_mon["Resultados"].values,
+                            colorscale=[[0, CYAN], [1, CYANL]], opacity=0.9),
                         hovertemplate="<b>%{x}</b><br>%{y:,.0f} resultados<extra></extra>"
                     ))
                     fig_t2.update_layout(**BASE_MA,
@@ -1447,345 +1582,423 @@ with pg2:
                 with tc3:
                     fig_t3 = go.Figure(go.Scatter(
                         x=df_mon["Mes"], y=df_mon["CPR"], mode="lines+markers",
-                        line=dict(color=PINK, width=2.5), marker=dict(size=7, color=PINK),
+                        line=dict(color=PINK, width=2.5), marker=dict(size=8, color=PINK,
+                            line=dict(width=2, color=WHITE)),
                         hovertemplate="<b>%{x}</b><br>CPR: $%{y:,.0f}<extra></extra>"
                     ))
                     fig_t3.update_layout(**BASE_MA,
-                        title=dict(text="Costo por Resultado (↓ mejor)", font=dict(color=WHITE,size=13,weight=700)),
+                        title=dict(text="Costo por Resultado · ↓ es mejor", font=dict(color=WHITE,size=13,weight=700)),
                         xaxis=dict(tickfont=dict(color=WHITE,size=9)),
                         yaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9)))
                     st.plotly_chart(fig_t3, use_container_width=True, config={"displayModeBar":False})
-
                 with tc4:
                     fig_t4 = go.Figure(go.Scatter(
                         x=df_mon["Mes"], y=df_mon["CTR"], mode="lines+markers",
-                        line=dict(color=GREEN, width=2.5), marker=dict(size=7, color=GREEN),
+                        line=dict(color=GREEN, width=2.5), marker=dict(size=8, color=GREEN,
+                            line=dict(width=2, color=WHITE)),
                         hovertemplate="<b>%{x}</b><br>CTR: %{y:.2f}%<extra></extra>"
                     ))
                     fig_t4.update_layout(**BASE_MA,
-                        title=dict(text="CTR mensual (↑ mejor)", font=dict(color=WHITE,size=13,weight=700)),
+                        title=dict(text="CTR mensual · ↑ es mejor", font=dict(color=WHITE,size=13,weight=700)),
                         xaxis=dict(tickfont=dict(color=WHITE,size=9)),
                         yaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9),
                                    ticksuffix="%"))
                     st.plotly_chart(fig_t4, use_container_width=True, config={"displayModeBar":False})
 
-                st.markdown('<div class="slabel">Tabla mes a mes</div>', unsafe_allow_html=True)
-                df_tbl = df_mon[["Mes","Inversión","Resultados","CPR","CTR","Impresiones"]].copy()
-                df_tbl["Inversión"]   = df_tbl["Inversión"].apply(lambda x: fmt_cop(x) if not np.isnan(x) else "—")
-                df_tbl["Resultados"]  = df_tbl["Resultados"].apply(lambda x: f"{x:,.0f}" if not np.isnan(x) else "—")
-                df_tbl["CPR"]         = df_tbl["CPR"].apply(lambda x: fmt_cop(x) if not np.isnan(x) else "—")
-                df_tbl["CTR"]         = df_tbl["CTR"].apply(lambda x: f"{x:.2f}%" if not np.isnan(x) else "—")
-                df_tbl["Impresiones"] = df_tbl["Impresiones"].apply(lambda x: f"{x:,.0f}" if not np.isnan(x) else "—")
+                st.markdown('<div class="slabel">Resumen mes a mes</div>', unsafe_allow_html=True)
+
+                def _fmt_safe(x, fmt): return fmt(x) if pd.notna(x) and not np.isnan(float(x)) else "—"
+                df_tbl = df_mon[["Mes","Inversión","Resultados","CPR","CTR","Impresiones","CPM"]].copy()
+                df_tbl["Inversión"]   = df_tbl["Inversión"].apply(lambda x: _fmt_safe(x, fmt_cop))
+                df_tbl["Resultados"]  = df_tbl["Resultados"].apply(lambda x: _fmt_safe(x, lambda v: f"{v:,.0f}"))
+                df_tbl["CPR"]         = df_tbl["CPR"].apply(lambda x: _fmt_safe(x, fmt_cop))
+                df_tbl["CTR"]         = df_tbl["CTR"].apply(lambda x: _fmt_safe(x, lambda v: f"{v:.2f}%"))
+                df_tbl["Impresiones"] = df_tbl["Impresiones"].apply(lambda x: _fmt_safe(x, lambda v: f"{v:,.0f}"))
+                df_tbl["CPM"]         = df_tbl["CPM"].apply(lambda x: _fmt_safe(x, fmt_cop))
                 st.dataframe(df_tbl, use_container_width=True, hide_index=True)
 
         # ── CAMPAÑAS ──────────────────────────────────────────────────────────
         with ma2:
-            camp_reps = [r for r in reports if r["cols"]["campaign"]]
+            camp_reps = [r for r in reports if r["cols"].get("campaign")]
             if not camp_reps:
-                st.info("No se encontró columna de campañas en los reportes cargados.")
+                st.info("No hay datos de campaña. Sube un reporte que incluya columna de campaña.")
             else:
-                dfs_c = []
-                for r in camp_reps:
-                    df_r = r["df"].copy(); df_r["__mes__"] = r.get("month_label","")
-                    dfs_c.append(df_r)
-                df_c  = pd.concat(dfs_c, ignore_index=True)
-                c0c   = camp_reps[0]["cols"]
-                col_cn, col_cs, col_cr = c0c["campaign"], c0c["spend"], c0c["results"]
-                col_cc = c0c["cpr"]
+                _, c0c, df_cg = _build_agg(camp_reps, "campaign")
+                col_cn = c0c.get("campaign"); col_cs = c0c.get("spend"); col_cr = c0c.get("results")
 
-                agg_c = {}
-                if col_cs: agg_c[col_cs] = "sum"
-                if col_cr: agg_c[col_cr] = "sum"
-                if agg_c and col_cn:
-                    df_cg = df_c.groupby(col_cn).agg(agg_c).reset_index()
-                    if col_cr and col_cs:
-                        df_cg["__cpr__"] = df_cg[col_cs] / df_cg[col_cr].replace(0, np.nan)
+                if df_cg is not None and col_cn:
+                    if col_cr and col_cr in df_cg.columns:
+                        top3_c = (df_cg[[col_cn, col_cr]].dropna()
+                                  .query(f"`{col_cr}` > 0")
+                                  .sort_values(col_cr, ascending=False).head(3))
+                        if not top3_c.empty:
+                            st.markdown('<div class="slabel">🏆 Mejores campañas · Resultados acumulados</div>', unsafe_allow_html=True)
+                            _podium(list(zip(top3_c[col_cn], top3_c[col_cr])),
+                                    val_label="resultados", val_fmt="{:,.0f}", color=CYANL)
+                            st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
 
                     cc1, cc2 = st.columns(2)
                     with cc1:
-                        if col_cr:
-                            top_r = df_cg[[col_cn,col_cr]].dropna()
-                            top_r = top_r[top_r[col_cr]>0].sort_values(col_cr,ascending=True).tail(10)
-                            top_r[col_cn] = top_r[col_cn].apply(lambda x: str(x)[:35]+"…" if len(str(x))>35 else str(x))
-                            fig_cr = go.Figure(go.Bar(
-                                x=top_r[col_cr], y=top_r[col_cn], orientation="h",
-                                marker=dict(color=top_r[col_cr].values,
-                                    colorscale=[[0,PURPLE],[1,CYANL]], opacity=0.9),
-                                hovertemplate="<b>%{y}</b><br>%{x:,.0f} resultados<extra></extra>"
-                            ))
-                            fig_cr.update_layout(**BASE_MA,
-                                title=dict(text="Top Campañas · Resultados", font=dict(color=WHITE,size=13,weight=700)),
-                                xaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9)),
-                                yaxis=dict(tickfont=dict(color=WHITE,size=9)))
-                            st.plotly_chart(fig_cr, use_container_width=True, config={"displayModeBar":False})
-
+                        if col_cr and col_cr in df_cg.columns:
+                            top_cr = df_cg[[col_cn, col_cr]].dropna().query(f"`{col_cr}` > 0")
+                            st.plotly_chart(_hbar(top_cr, col_cr, col_cn,
+                                "Resultados por campaña",
+                                "%{x:,.0f} resultados", PURPLE, CYANL),
+                                use_container_width=True, config={"displayModeBar":False})
                     with cc2:
-                        if "__cpr__" in df_cg:
-                            eff = df_cg[[col_cn,"__cpr__"]].dropna()
-                            eff = eff[eff["__cpr__"]>0].sort_values("__cpr__",ascending=True).head(10)
-                            eff[col_cn] = eff[col_cn].apply(lambda x: str(x)[:35]+"…" if len(str(x))>35 else str(x))
-                            fig_ce = go.Figure(go.Bar(
-                                x=eff["__cpr__"], y=eff[col_cn], orientation="h",
-                                marker=dict(color=GREEN, opacity=0.85),
-                                hovertemplate="<b>%{y}</b><br>CPR: $%{x:,.0f}<extra></extra>"
-                            ))
-                            fig_ce.update_layout(**BASE_MA,
-                                title=dict(text="Campañas más eficientes (↓ CPR)", font=dict(color=WHITE,size=13,weight=700)),
-                                xaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9)),
-                                yaxis=dict(tickfont=dict(color=WHITE,size=9)))
-                            st.plotly_chart(fig_ce, use_container_width=True, config={"displayModeBar":False})
+                        if "__cpr__" in df_cg.columns:
+                            eff_c = df_cg[[col_cn, "__cpr__"]].dropna().query("__cpr__ > 0")
+                            st.plotly_chart(_hbar(eff_c, "__cpr__", col_cn,
+                                "Campañas más eficientes · ↓ CPR",
+                                "CPR: $%{x:,.0f}", GREEN, CYANL, invert=True),
+                                use_container_width=True, config={"displayModeBar":False})
 
-                    if col_cs and col_cn:
-                        st.markdown('<div class="slabel">Distribución del gasto por campaña</div>', unsafe_allow_html=True)
-                        df_pie = df_cg[[col_cn,col_cs]].dropna()
-                        df_pie = df_pie[df_pie[col_cs]>0].sort_values(col_cs,ascending=False).head(8)
-                        df_pie[col_cn] = df_pie[col_cn].apply(lambda x: str(x)[:28]+"…" if len(str(x))>28 else str(x))
-                        COLORS_PIE = [PURPLE,CYANL,GREEN,PINK,PURPLEL,"#F5A623","#9B59B6","#1ABC9C"]
-                        fig_pie = go.Figure(go.Pie(
-                            labels=df_pie[col_cn], values=df_pie[col_cs], hole=0.42,
-                            marker=dict(colors=COLORS_PIE),
-                            textfont=dict(color=WHITE, size=10),
-                            hovertemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>"
-                        ))
-                        fig_pie.update_layout(
-                            paper_bgcolor="rgba(0,0,0,0)", height=300,
-                            margin=dict(l=10,r=10,t=10,b=10),
-                            legend=dict(font=dict(color=MUTED,size=9),bgcolor="rgba(0,0,0,0)"),
-                            font=dict(family="Inter",color=MUTED)
-                        )
-                        st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar":False})
+                    if col_cs and col_cs in df_cg.columns:
+                        st.plotly_chart(_donut(df_cg, col_cn, col_cs,
+                            "Distribución del gasto por campaña"),
+                            use_container_width=True, config={"displayModeBar":False})
 
         # ── PÚBLICOS ──────────────────────────────────────────────────────────
         with ma3:
-            pub_reps = [r for r in reports if r["cols"]["adset"]]
+            pub_reps = [r for r in reports if r["cols"].get("adset")]
             if not pub_reps:
-                st.info("No se encontró columna de conjuntos de anuncios en los reportes cargados.")
+                st.info("No hay datos de públicos. Sube un reporte que incluya columna de conjunto de anuncios.")
             else:
-                dfs_p = []
-                for r in pub_reps:
-                    df_r = r["df"].copy(); df_r["__mes__"] = r.get("month_label","")
-                    dfs_p.append(df_r)
-                df_p = pd.concat(dfs_p, ignore_index=True)
-                c0p  = pub_reps[0]["cols"]
-                col_pn, col_ps, col_pr, col_pt = c0p["adset"], c0p["spend"], c0p["results"], c0p["ctr"]
+                _, c0p, df_pg = _build_agg(pub_reps, "adset")
+                col_pn = c0p.get("adset"); col_ps = c0p.get("spend")
+                col_pr = c0p.get("results"); col_pt = c0p.get("ctr")
 
-                agg_p = {}
-                if col_ps: agg_p[col_ps] = "sum"
-                if col_pr: agg_p[col_pr] = "sum"
-                if col_pt: agg_p[col_pt] = "mean"
-                if agg_p and col_pn:
-                    df_pg = df_p.groupby(col_pn).agg(agg_p).reset_index()
-                    if col_pr and col_ps:
-                        df_pg["__cpr__"] = df_pg[col_ps] / df_pg[col_pr].replace(0, np.nan)
+                if df_pg is not None and col_pn:
+                    if col_pr and col_pr in df_pg.columns:
+                        top3_p = (df_pg[[col_pn, col_pr]].dropna()
+                                  .query(f"`{col_pr}` > 0")
+                                  .sort_values(col_pr, ascending=False).head(3))
+                        if not top3_p.empty:
+                            st.markdown('<div class="slabel">🏆 Mejores públicos · Resultados acumulados</div>', unsafe_allow_html=True)
+                            _podium(list(zip(top3_p[col_pn], top3_p[col_pr])),
+                                    val_label="resultados", val_fmt="{:,.0f}", color=CYANL)
+                            st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
 
                     pc1, pc2 = st.columns(2)
                     with pc1:
-                        if col_pr:
-                            top_pr = df_pg[[col_pn,col_pr]].dropna()
-                            top_pr = top_pr[top_pr[col_pr]>0].sort_values(col_pr,ascending=True).tail(10)
-                            top_pr[col_pn] = top_pr[col_pn].apply(lambda x: str(x)[:35]+"…" if len(str(x))>35 else str(x))
-                            fig_pp = go.Figure(go.Bar(
-                                x=top_pr[col_pr], y=top_pr[col_pn], orientation="h",
-                                marker=dict(color=top_pr[col_pr].values,
-                                    colorscale=[[0,PURPLE],[1,CYANL]], opacity=0.9),
-                                hovertemplate="<b>%{y}</b><br>%{x:,.0f} resultados<extra></extra>"
-                            ))
-                            fig_pp.update_layout(**BASE_MA,
-                                title=dict(text="Top Públicos · Resultados", font=dict(color=WHITE,size=13,weight=700)),
-                                xaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9)),
-                                yaxis=dict(tickfont=dict(color=WHITE,size=9)))
-                            st.plotly_chart(fig_pp, use_container_width=True, config={"displayModeBar":False})
-
+                        if col_pr and col_pr in df_pg.columns:
+                            top_pr = df_pg[[col_pn, col_pr]].dropna().query(f"`{col_pr}` > 0")
+                            st.plotly_chart(_hbar(top_pr, col_pr, col_pn,
+                                "Resultados por público",
+                                "%{x:,.0f} resultados", PURPLE, CYANL),
+                                use_container_width=True, config={"displayModeBar":False})
                     with pc2:
-                        if "__cpr__" in df_pg:
-                            eff_p = df_pg[[col_pn,"__cpr__"]].dropna()
-                            eff_p = eff_p[eff_p["__cpr__"]>0].sort_values("__cpr__",ascending=True).head(10)
-                            eff_p[col_pn] = eff_p[col_pn].apply(lambda x: str(x)[:35]+"…" if len(str(x))>35 else str(x))
-                            fig_pe = go.Figure(go.Bar(
-                                x=eff_p["__cpr__"], y=eff_p[col_pn], orientation="h",
-                                marker=dict(color=GREEN, opacity=0.85),
-                                hovertemplate="<b>%{y}</b><br>CPR: $%{x:,.0f}<extra></extra>"
-                            ))
-                            fig_pe.update_layout(**BASE_MA,
-                                title=dict(text="Públicos más eficientes (↓ CPR)", font=dict(color=WHITE,size=13,weight=700)),
-                                xaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9)),
-                                yaxis=dict(tickfont=dict(color=WHITE,size=9)))
-                            st.plotly_chart(fig_pe, use_container_width=True, config={"displayModeBar":False})
+                        if "__cpr__" in df_pg.columns:
+                            eff_p = df_pg[[col_pn, "__cpr__"]].dropna().query("__cpr__ > 0")
+                            st.plotly_chart(_hbar(eff_p, "__cpr__", col_pn,
+                                "Públicos más eficientes · ↓ CPR",
+                                "CPR: $%{x:,.0f}", GREEN, CYANL, invert=True),
+                                use_container_width=True, config={"displayModeBar":False})
 
-                    if col_pt:
-                        st.markdown('<div class="slabel">CTR por público — Relevancia del targeting</div>', unsafe_allow_html=True)
-                        ctr_p = df_pg[[col_pn,col_pt]].dropna()
-                        ctr_p = ctr_p[ctr_p[col_pt]>0].sort_values(col_pt,ascending=True).tail(10)
-                        ctr_p[col_pn] = ctr_p[col_pn].apply(lambda x: str(x)[:35]+"…" if len(str(x))>35 else str(x))
-                        fig_ctrp = go.Figure(go.Bar(
-                            x=ctr_p[col_pt], y=ctr_p[col_pn], orientation="h",
-                            marker=dict(color=PINK, opacity=0.85),
-                            hovertemplate="<b>%{y}</b><br>CTR: %{x:.2f}%<extra></extra>"
-                        ))
-                        fig_ctrp.update_layout(**BASE_MA,
-                            title=dict(text="Mejor CTR por público", font=dict(color=WHITE,size=13,weight=700)),
-                            xaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9), ticksuffix="%"),
-                            yaxis=dict(tickfont=dict(color=WHITE,size=9)))
-                        st.plotly_chart(fig_ctrp, use_container_width=True, config={"displayModeBar":False})
+                    if col_pt and col_pt in df_pg.columns:
+                        st.markdown('<div class="slabel">Relevancia del targeting · CTR por público</div>', unsafe_allow_html=True)
+                        ctr_p = df_pg[[col_pn, col_pt]].dropna().query(f"`{col_pt}` > 0")
+                        st.plotly_chart(_hbar(ctr_p, col_pt, col_pn,
+                            "CTR por público · ↑ mejor",
+                            "CTR: %{x:.2f}%", PINK, AMBER, xsuffix="%"),
+                            use_container_width=True, config={"displayModeBar":False})
+
+                    if col_ps and col_ps in df_pg.columns:
+                        st.plotly_chart(_donut(df_pg, col_pn, col_ps,
+                            "Distribución del gasto por público"),
+                            use_container_width=True, config={"displayModeBar":False})
 
         # ── ANUNCIOS ──────────────────────────────────────────────────────────
         with ma4:
-            ad_reps = [r for r in reports if r["cols"]["ad"]]
+            ad_reps = [r for r in reports if r["cols"].get("ad")]
             if not ad_reps:
-                st.info("No se encontró columna de anuncios en los reportes cargados.")
+                st.info("No hay datos de anuncios. Sube un reporte que incluya columna de anuncio.")
             else:
-                dfs_a = []
-                for r in ad_reps:
-                    df_r = r["df"].copy(); df_r["__mes__"] = r.get("month_label","")
-                    dfs_a.append(df_r)
-                df_a = pd.concat(dfs_a, ignore_index=True)
-                c0a  = ad_reps[0]["cols"]
-                col_an, col_as_, col_ar, col_at = c0a["ad"], c0a["spend"], c0a["results"], c0a["ctr"]
+                _, c0a, df_ag = _build_agg(ad_reps, "ad")
+                col_an  = c0a.get("ad");    col_as_ = c0a.get("spend")
+                col_ar  = c0a.get("results"); col_at = c0a.get("ctr")
+                col_av3 = c0a.get("video_3s"); col_avim = c0a.get("impressions")
+                col_avp25 = c0a.get("video_p25"); col_avp50 = c0a.get("video_p50")
+                col_avp75 = c0a.get("video_p75"); col_avp100 = c0a.get("video_p100")
+                col_atp   = c0a.get("thruplay"); col_avpl = c0a.get("video_plays")
 
-                agg_a = {}
-                if col_as_: agg_a[col_as_] = "sum"
-                if col_ar:  agg_a[col_ar]  = "sum"
-                if col_at:  agg_a[col_at]  = "mean"
-                if agg_a and col_an:
-                    df_ag = df_a.groupby(col_an).agg(agg_a).reset_index()
-                    if col_ar and col_as_:
-                        df_ag["__cpr__"] = df_ag[col_as_] / df_ag[col_ar].replace(0, np.nan)
+                if df_ag is not None and col_an:
+                    # Podio top 3
+                    if col_ar and col_ar in df_ag.columns:
+                        top3_a = (df_ag[[col_an, col_ar]].dropna()
+                                  .query(f"`{col_ar}` > 0")
+                                  .sort_values(col_ar, ascending=False).head(3))
+                        if not top3_a.empty:
+                            st.markdown('<div class="slabel">🏆 Mejores anuncios · Resultados acumulados</div>', unsafe_allow_html=True)
+                            _podium(list(zip(top3_a[col_an], top3_a[col_ar])),
+                                    val_label="resultados", val_fmt="{:,.0f}", color=CYANL)
+                            st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
 
                     ac1, ac2 = st.columns(2)
                     with ac1:
-                        if col_ar:
-                            top_ar = df_ag[[col_an,col_ar]].dropna()
-                            top_ar = top_ar[top_ar[col_ar]>0].sort_values(col_ar,ascending=True).tail(10)
-                            top_ar[col_an] = top_ar[col_an].apply(lambda x: str(x)[:35]+"…" if len(str(x))>35 else str(x))
-                            fig_aar = go.Figure(go.Bar(
-                                x=top_ar[col_ar], y=top_ar[col_an], orientation="h",
-                                marker=dict(color=top_ar[col_ar].values,
-                                    colorscale=[[0,PURPLE],[1,CYANL]], opacity=0.9),
-                                hovertemplate="<b>%{y}</b><br>%{x:,.0f} resultados<extra></extra>"
-                            ))
-                            fig_aar.update_layout(**BASE_MA,
-                                title=dict(text="Top Anuncios · Resultados", font=dict(color=WHITE,size=13,weight=700)),
-                                xaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9)),
-                                yaxis=dict(tickfont=dict(color=WHITE,size=9)))
-                            st.plotly_chart(fig_aar, use_container_width=True, config={"displayModeBar":False})
-
+                        if col_ar and col_ar in df_ag.columns:
+                            top_ar = df_ag[[col_an, col_ar]].dropna().query(f"`{col_ar}` > 0")
+                            st.plotly_chart(_hbar(top_ar, col_ar, col_an,
+                                "Resultados por anuncio",
+                                "%{x:,.0f} resultados", PURPLE, CYANL),
+                                use_container_width=True, config={"displayModeBar":False})
                     with ac2:
-                        if col_at and col_at in df_ag:
-                            top_ctr = df_ag[[col_an,col_at]].dropna()
-                            top_ctr = top_ctr[top_ctr[col_at]>0].sort_values(col_at,ascending=True).tail(10)
-                            top_ctr[col_an] = top_ctr[col_an].apply(lambda x: str(x)[:35]+"…" if len(str(x))>35 else str(x))
-                            fig_ctra = go.Figure(go.Bar(
-                                x=top_ctr[col_at], y=top_ctr[col_an], orientation="h",
-                                marker=dict(color=GREEN, opacity=0.85),
-                                hovertemplate="<b>%{y}</b><br>CTR: %{x:.2f}%<extra></extra>"
-                            ))
-                            fig_ctra.update_layout(**BASE_MA,
-                                title=dict(text="Mejor CTR · Creativos más relevantes", font=dict(color=WHITE,size=13,weight=700)),
-                                xaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9), ticksuffix="%"),
-                                yaxis=dict(tickfont=dict(color=WHITE,size=9)))
-                            st.plotly_chart(fig_ctra, use_container_width=True, config={"displayModeBar":False})
+                        if "__cpr__" in df_ag.columns:
+                            eff_a = df_ag[[col_an, "__cpr__"]].dropna().query("__cpr__ > 0")
+                            st.plotly_chart(_hbar(eff_a, "__cpr__", col_an,
+                                "Anuncios más eficientes · ↓ CPR",
+                                "CPR: $%{x:,.0f}", GREEN, CYANL, invert=True),
+                                use_container_width=True, config={"displayModeBar":False})
 
+                    # CTR por anuncio
+                    if col_at and col_at in df_ag.columns:
+                        top_ctr_a = df_ag[[col_an, col_at]].dropna().query(f"`{col_at}` > 0")
+                        st.plotly_chart(_hbar(top_ctr_a, col_at, col_an,
+                            "CTR por anuncio · Creativos más relevantes · ↑ mejor",
+                            "CTR: %{x:.2f}%", PINK, AMBER, xsuffix="%"),
+                            use_container_width=True, config={"displayModeBar":False})
+
+                    # ── VIDEO / HOOK ──────────────────────────────────────────
+                    has_video = any(c0a.get(k) for k in
+                                    ["video_3s","video_p25","video_p50","video_p75","video_p100","thruplay"])
+                    if has_video:
+                        st.markdown(f"""
+<div style="background:linear-gradient(135deg,{PURPLE}22,{CYANL}11);
+  border:1px solid {PURPLE}44;border-radius:12px;padding:.6rem 1rem;margin:.6rem 0">
+  <div style="color:{WHITE};font-weight:700;font-size:.85rem">🎬 Análisis de Video · Hook & Retención</div>
+  <div style="color:{MUTED};font-size:.72rem;margin-top:.15rem">
+    Hook Rate = reproducciones 3s / impresiones · mide qué tan bien engancha el inicio del video</div>
+</div>""", unsafe_allow_html=True)
+
+                        if "__hook_rate__" in df_ag.columns:
+                            top3_hk = (df_ag[[col_an, "__hook_rate__"]].dropna()
+                                       .query("__hook_rate__ > 0")
+                                       .sort_values("__hook_rate__", ascending=False).head(3))
+                            if not top3_hk.empty:
+                                st.markdown('<div class="slabel">🎣 Hook Rate · Top 3 anuncios que más enganchan</div>', unsafe_allow_html=True)
+                                _podium(list(zip(top3_hk[col_an], top3_hk["__hook_rate__"])),
+                                        val_label="hook rate", val_fmt="{:.1f}%", color=AMBER)
+                                st.markdown("<div style='height:.4rem'></div>", unsafe_allow_html=True)
+
+                        vc1, vc2 = st.columns(2)
+                        with vc1:
+                            if "__hook_rate__" in df_ag.columns:
+                                hr_d = df_ag[[col_an, "__hook_rate__"]].dropna().query("__hook_rate__ > 0")
+                                st.plotly_chart(_hbar(hr_d, "__hook_rate__", col_an,
+                                    "Hook Rate · ↑ mejor", "Hook: %{x:.1f}%",
+                                    AMBER, GREEN, xsuffix="%"),
+                                    use_container_width=True, config={"displayModeBar":False})
+                        with vc2:
+                            if "__completion__" in df_ag.columns:
+                                comp_d = df_ag[[col_an, "__completion__"]].dropna().query("__completion__ > 0")
+                                st.plotly_chart(_hbar(comp_d, "__completion__", col_an,
+                                    "Tasa de completado (100% visto / 3s) · ↑ mejor",
+                                    "Completado: %{x:.1f}%",
+                                    PURPLE, CYANL, xsuffix="%"),
+                                    use_container_width=True, config={"displayModeBar":False})
+
+                        # Funnel de retención
+                        funnel_vals, funnel_lbls = [], []
+                        for fc, fl in [(col_avim, "Impresiones"), (col_avpl, "Reproducciones"),
+                                       (col_av3, "3 seg · Hook"),
+                                       (col_avp25, "25% visto"), (col_avp50, "50% visto"),
+                                       (col_avp75, "75% visto"), (col_avp100, "100% visto"),
+                                       (col_atp, "ThruPlay")]:
+                            if fc and fc in df_ag.columns:
+                                tv = float(df_ag[fc].sum())
+                                if tv > 0: funnel_vals.append(tv); funnel_lbls.append(fl)
+                        if len(funnel_vals) >= 3:
+                            st.markdown('<div class="slabel">Embudo de retención de video (acumulado todos los anuncios)</div>', unsafe_allow_html=True)
+                            F_COLORS = [PURPLE, PURPLEL, CYANL, CYAN, GREEN, AMBER, PINK, RED]
+                            fig_funnel = go.Figure(go.Funnel(
+                                y=funnel_lbls, x=funnel_vals,
+                                marker=dict(color=F_COLORS[:len(funnel_lbls)]),
+                                textfont=dict(color=WHITE, size=11),
+                                textinfo="value+percent initial",
+                                hovertemplate="<b>%{y}</b><br>%{x:,.0f}<extra></extra>"
+                            ))
+                            fig_funnel.update_layout(
+                                paper_bgcolor="rgba(0,0,0,0)",
+                                plot_bgcolor="rgba(20,25,41,0.6)",
+                                font=dict(family="Inter", color=MUTED, size=11),
+                                margin=dict(l=10, r=10, t=20, b=10), height=320,
+                                hoverlabel=dict(bgcolor=CARD2, font_color=WHITE)
+                            )
+                            st.plotly_chart(fig_funnel, use_container_width=True, config={"displayModeBar":False})
+
+                    # Peores anuncios
                     if "__cpr__" in df_ag.columns:
-                        st.markdown('<div class="slabel">Anuncios con mayor CPR — Revisar o pausar</div>', unsafe_allow_html=True)
-                        worst = df_ag[[col_an,"__cpr__"]].dropna()
-                        worst = worst[worst["__cpr__"]>0].sort_values("__cpr__",ascending=False).head(8)
-                        worst[col_an] = worst[col_an].apply(lambda x: str(x)[:40]+"…" if len(str(x))>40 else str(x))
+                        st.markdown('<div class="slabel">⚠️ Mayor CPR · Candidatos a revisar o pausar</div>', unsafe_allow_html=True)
+                        worst = (df_ag[[col_an, "__cpr__"]].dropna()
+                                 .query("__cpr__ > 0")
+                                 .sort_values("__cpr__", ascending=False).head(8)).copy()
+                        worst[col_an] = worst[col_an].apply(lambda x: _trunc(x, 40))
                         fig_worst = go.Figure(go.Bar(
                             x=worst["__cpr__"], y=worst[col_an], orientation="h",
                             marker=dict(color=PINK, opacity=0.85),
                             hovertemplate="<b>%{y}</b><br>CPR: $%{x:,.0f}<extra></extra>"
                         ))
-                        fig_worst.update_layout(**{**BASE_MA, "height": 260},
-                            title=dict(text="Mayor Costo por Resultado", font=dict(color=WHITE,size=13,weight=700)),
+                        fig_worst.update_layout(**{**BASE_MA, "height": 270},
+                            title=dict(text="Anuncios con mayor Costo por Resultado", font=dict(color=WHITE,size=13,weight=700)),
                             xaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9)),
                             yaxis=dict(tickfont=dict(color=WHITE,size=9)))
                         st.plotly_chart(fig_worst, use_container_width=True, config={"displayModeBar":False})
 
         # ── DIAGNÓSTICO ───────────────────────────────────────────────────────
         with ma5:
+            # Ganadores acumulados
+            st.markdown('<div class="slabel">🏆 Ganadores acumulados</div>', unsafe_allow_html=True)
+            win_cols_ui = st.columns(3)
+            for wi, (rk, lbl, clr) in enumerate([
+                ("campaign", "🎯 Mejor Campaña", PURPLE),
+                ("adset",    "👥 Mejor Público",  CYANL),
+                ("ad",       "🎨 Mejor Anuncio",  GREEN)
+            ]):
+                rk_reps = [r for r in reports if r["cols"].get(rk)]
+                if rk_reps:
+                    df_rk = pd.concat([r["df"] for r in rk_reps], ignore_index=True)
+                    c_nm  = rk_reps[0]["cols"].get(rk)
+                    c_rs  = rk_reps[0]["cols"].get("results")
+                    if c_nm and c_rs and c_rs in df_rk.columns:
+                        grp = df_rk.groupby(c_nm)[c_rs].sum()
+                        bn  = _trunc(str(grp.idxmax()), 38)
+                        bv  = int(grp.max())
+                        win_cols_ui[wi].markdown(f"""
+<div style="background:{CARD2};border:1px solid {clr}44;border-radius:14px;
+  padding:1rem .9rem;text-align:center;height:100%">
+  <div style="font-size:.76rem;color:{MUTED};margin-bottom:.3rem">{lbl}</div>
+  <div style="color:{WHITE};font-size:.74rem;font-weight:600;line-height:1.5;
+    min-height:3rem;display:flex;align-items:center;justify-content:center">{bn}</div>
+  <div style="color:{clr};font-size:1.15rem;font-weight:800;margin-top:.5rem">{bv:,}</div>
+  <div style="color:{MUTED};font-size:.64rem">resultados totales</div>
+</div>""", unsafe_allow_html=True)
+                    else:
+                        win_cols_ui[wi].markdown(f'<div style="color:{MUTED};font-size:.75rem">Sin datos</div>', unsafe_allow_html=True)
+                else:
+                    win_cols_ui[wi].markdown(f'<div style="color:{MUTED};font-size:.75rem">Sin datos</div>', unsafe_allow_html=True)
+
+            st.markdown("<div style='height:.7rem'></div>", unsafe_allow_html=True)
+
+            # Mejor anuncio por hook rate
+            _, c0d, df_dg = _build_agg([r for r in reports if r["cols"].get("ad")], "ad")
+            if df_dg is not None and "__hook_rate__" in df_dg.columns:
+                col_dn = c0d.get("ad")
+                top_hk = (df_dg[[col_dn, "__hook_rate__", "__cpr__"]]
+                           .dropna(subset=[col_dn, "__hook_rate__"])
+                           .query("__hook_rate__ > 0")
+                           .sort_values("__hook_rate__", ascending=False).head(1))
+                if not top_hk.empty:
+                    hk_nm  = _trunc(str(top_hk.iloc[0][col_dn]), 55)
+                    hk_val = top_hk.iloc[0]["__hook_rate__"]
+                    st.markdown(f"""
+<div style="background:{CARD2};border-left:3px solid {AMBER};border-radius:10px;
+  padding:.75rem 1.1rem;margin-bottom:.65rem">
+  <div style="font-size:.82rem;font-weight:700;color:{WHITE};margin-bottom:.15rem">
+    🎬 Creativo con mejor Hook Rate</div>
+  <div style="color:{AMBER};font-size:.85rem;font-weight:700;margin-bottom:.1rem">{hk_nm}</div>
+  <div style="color:{MUTED};font-size:.75rem">Hook Rate: <strong style="color:{AMBER}">{hk_val:.1f}%</strong>
+    — Engancha mejor en los primeros 3 segundos</div>
+</div>""", unsafe_allow_html=True)
+
+            # Tendencias
+            st.markdown('<div class="slabel">📊 Tendencias e insights automáticos</div>', unsafe_allow_html=True)
             insights: list = []
 
-            # build df_mon if not already done (may be <2 months)
-            if "df_mon" not in dir():
+            if "df_mon" not in dir() or df_mon is None or df_mon.empty:
                 monthly_d: list = []
-                for r in sorted(reports, key=lambda x: x.get("month","")):
+                for r in sorted(reports, key=lambda x: x.get("month", "")):
                     c = r["cols"]; df_r = r["df"]
-                    sp = float(df_r[c["spend"]].sum())   if c["spend"]   else np.nan
-                    rs = float(df_r[c["results"]].sum()) if c["results"] else np.nan
-                    cp = float(df_r[c["cpr"]].mean())    if c["cpr"]     else (sp/rs if rs else np.nan)
-                    ct = float(df_r[c["ctr"]].mean())    if c["ctr"]     else np.nan
+                    sp = float(df_r[c["spend"]].sum())   if c.get("spend")   else np.nan
+                    rs = float(df_r[c["results"]].sum()) if c.get("results") else np.nan
+                    cp = float(df_r[c["cpr"]].mean())    if c.get("cpr")     else (sp/rs if rs else np.nan)
+                    ct = float(df_r[c["ctr"]].mean())    if c.get("ctr")     else np.nan
                     monthly_d.append({"Mes": r.get("month_label",""), "MesKey": r.get("month",""),
                                       "Inversión": sp, "Resultados": rs, "CPR": cp, "CTR": ct})
                 df_mon = pd.DataFrame(monthly_d).sort_values("MesKey").reset_index(drop=True)
 
+            def _safe_chg(new_v, old_v):
+                try:
+                    nv, ov = float(new_v), float(old_v)
+                    if np.isnan(nv) or np.isnan(ov) or ov == 0: return np.nan
+                    return (nv - ov) / ov * 100
+                except Exception: return np.nan
+
             if len(df_mon) >= 2:
                 last_m = df_mon.iloc[-1]; prev_m = df_mon.iloc[-2]
+                cpr_chg = _safe_chg(last_m["CPR"], prev_m["CPR"])
+                res_chg = _safe_chg(last_m["Resultados"], prev_m["Resultados"])
+                ctr_chg = _safe_chg(last_m["CTR"], prev_m["CTR"])
 
-                if not (np.isnan(last_m["CPR"]) or np.isnan(prev_m["CPR"])) and prev_m["CPR"] > 0:
-                    chg = (last_m["CPR"] - prev_m["CPR"]) / prev_m["CPR"] * 100
-                    if chg > 10:
-                        insights.append(("🔴", "CPR en alza",
-                            f"El CPR subió **{chg:.1f}%** de {prev_m['Mes']} a {last_m['Mes']} "
+                if not np.isnan(cpr_chg):
+                    if cpr_chg > 10:
+                        insights.append(("🔴","CPR en alza",
+                            f"El CPR subió **{cpr_chg:.1f}%** de {prev_m['Mes']} a {last_m['Mes']} "
                             f"({fmt_cop(prev_m['CPR'])} → {fmt_cop(last_m['CPR'])}). Revisar creativos y audiencias."))
-                    elif chg < -10:
-                        insights.append(("🟢", "CPR mejorando",
-                            f"El CPR bajó **{abs(chg):.1f}%** de {prev_m['Mes']} a {last_m['Mes']} "
+                    elif cpr_chg < -10:
+                        insights.append(("🟢","CPR mejorando",
+                            f"El CPR bajó **{abs(cpr_chg):.1f}%** de {prev_m['Mes']} a {last_m['Mes']} "
                             f"({fmt_cop(prev_m['CPR'])} → {fmt_cop(last_m['CPR'])}). Buena señal de optimización."))
                     else:
-                        insights.append(("🟡", "CPR estable",
+                        insights.append(("🟡","CPR estable",
                             f"El CPR se mantuvo estable ({fmt_cop(prev_m['CPR'])} → {fmt_cop(last_m['CPR'])})."))
 
-                if not (np.isnan(last_m["Resultados"]) or np.isnan(prev_m["Resultados"])) and prev_m["Resultados"] > 0:
-                    chg_r = (last_m["Resultados"] - prev_m["Resultados"]) / prev_m["Resultados"] * 100
-                    if chg_r > 5:
-                        insights.append(("🟢", "Resultados creciendo",
-                            f"Los resultados subieron **{chg_r:.1f}%** ({int(prev_m['Resultados']):,} → {int(last_m['Resultados']):,})."))
-                    elif chg_r < -5:
-                        insights.append(("🔴", "Resultados cayendo",
-                            f"Los resultados cayeron **{abs(chg_r):.1f}%** ({int(prev_m['Resultados']):,} → {int(last_m['Resultados']):,}). Revisar estrategia."))
+                if not np.isnan(res_chg):
+                    if res_chg > 5:
+                        insights.append(("🟢","Resultados creciendo",
+                            f"Subieron **{res_chg:.1f}%** ({int(prev_m['Resultados']):,} → {int(last_m['Resultados']):,})."))
+                    elif res_chg < -5:
+                        insights.append(("🔴","Resultados cayendo",
+                            f"Cayeron **{abs(res_chg):.1f}%** ({int(prev_m['Resultados']):,} → {int(last_m['Resultados']):,}). Revisar estrategia."))
 
-                if not (np.isnan(last_m["CTR"]) or np.isnan(prev_m["CTR"])) and prev_m["CTR"] > 0:
-                    chg_c = (last_m["CTR"] - prev_m["CTR"]) / prev_m["CTR"] * 100
-                    if chg_c < -15:
-                        insights.append(("🔴", "Fatiga creativa detectada",
-                            f"El CTR cayó **{abs(chg_c):.1f}%** ({prev_m['CTR']:.2f}% → {last_m['CTR']:.2f}%). "
-                            "Señal de saturación — renovar creativos."))
-                    elif chg_c > 15:
-                        insights.append(("🟢", "CTR mejorando",
-                            f"El CTR subió **{chg_c:.1f}%** ({prev_m['CTR']:.2f}% → {last_m['CTR']:.2f}%). "
-                            "Los creativos están resonando mejor."))
+                if not np.isnan(ctr_chg):
+                    if ctr_chg < -15:
+                        insights.append(("🔴","Fatiga creativa detectada",
+                            f"CTR cayó **{abs(ctr_chg):.1f}%** ({prev_m['CTR']:.2f}% → {last_m['CTR']:.2f}%). "
+                            "Señal de saturación de audiencia — renovar creativos."))
+                    elif ctr_chg > 15:
+                        insights.append(("🟢","CTR mejorando",
+                            f"CTR subió **{ctr_chg:.1f}%** ({prev_m['CTR']:.2f}% → {last_m['CTR']:.2f}%). "
+                            "Los creativos están resonando mejor con las audiencias."))
+            else:
+                insights.append(("ℹ️","Pocos datos",
+                    "Sube reportes de al menos **2 meses** para ver análisis de tendencias."))
 
-            # Resumen global
             if all_spend > 0 and all_results > 0:
-                insights.append(("📊", "Eficiencia global",
-                    f"Total invertido: **{fmt_cop(all_spend)}** · Total resultados: **{int(all_results):,}** · "
-                    f"CPR promedio histórico: **{fmt_cop(avg_cpr_g)}**."))
+                insights.append(("📊","Eficiencia histórica global",
+                    f"Total invertido: **{fmt_cop(all_spend)}** · Resultados: **{int(all_results):,}** · "
+                    f"CPR histórico: **{fmt_cop(all_spend/all_results)}** · Meses: **{n_meses}**."))
 
-            # Mejor entidad por tipo
-            for rtype_k, col_k, lbl_k in [
-                ("Campañas","campaign","campaña"),
-                ("Públicos","adset","público"),
-                ("Anuncios","ad","anuncio")
-            ]:
-                rk = [r for r in reports if r["type"] == rtype_k and r["cols"][col_k]]
-                if rk:
-                    df_rk   = pd.concat([r["df"] for r in rk], ignore_index=True)
-                    c_name  = rk[0]["cols"][col_k]
-                    c_res_k = rk[0]["cols"]["results"]
-                    if c_name and c_res_k:
-                        best_name = df_rk.groupby(c_name)[c_res_k].sum().idxmax()
-                        best_val  = int(df_rk.groupby(c_name)[c_res_k].sum().max())
-                        best_str  = str(best_name)[:50]+("…" if len(str(best_name))>50 else "")
-                        insights.append(("🏆", f"Mejor {lbl_k}",
-                            f"**{best_str}** — **{best_val:,} resultados** acumulados."))
+            # Alertas automáticas
+            _, c0alrt, df_alrt = _build_agg([r for r in reports if r["cols"].get("ad")], "ad")
+            if df_alrt is not None and "__cpr__" in df_alrt.columns:
+                col_alrt_n = c0alrt.get("ad")
+                worst_a = (df_alrt[[col_alrt_n, "__cpr__"]].dropna()
+                            .query("__cpr__ > 0")
+                            .sort_values("__cpr__", ascending=False).head(1))
+                if not worst_a.empty:
+                    wn = _trunc(str(worst_a.iloc[0][col_alrt_n]), 50)
+                    wc = worst_a.iloc[0]["__cpr__"]
+                    insights.append(("⚠️","Anuncio a revisar",
+                        f"**{wn}** tiene el CPR más alto: **{fmt_cop(wc)}**. "
+                        "Considera pausarlo o actualizar el creativo."))
 
+            for r in reports:
+                c = r["cols"]; df_r = r["df"]
+                if c.get("frequency") and c["frequency"] in df_r.columns:
+                    avg_freq = float(df_r[c["frequency"]].mean())
+                    if avg_freq > 3:
+                        insights.append(("⚠️",f"Frecuencia alta · {r.get('month_label','')}",
+                            f"Frecuencia promedio: **{avg_freq:.1f}**. La audiencia ve el mismo anuncio más de 3 veces — "
+                            "riesgo de fatiga. Ampliar públicos o rotar creativos."))
+                        break
+
+            COLOR_MAP_D = {"🔴": PINK, "🟢": GREEN, "🟡": AMBER,
+                           "📊": CYANL, "🏆": PURPLEL, "⚠️": AMBER, "ℹ️": MUTED}
             if not insights:
                 st.info("Sube más reportes para generar diagnósticos automáticos.")
             else:
-                COLOR_MAP = {"🔴": PINK, "🟢": GREEN, "🟡": "#F5A623",
-                             "📊": CYANL, "🏆": PURPLEL}
                 for icon, title_i, body_i in insights:
-                    col_i = COLOR_MAP.get(icon, MUTED)
+                    col_i = COLOR_MAP_D.get(icon, MUTED)
                     st.markdown(f"""
 <div style="background:{CARD2};border-left:3px solid {col_i};border-radius:10px;
   padding:.75rem 1.1rem;margin-bottom:.65rem">
