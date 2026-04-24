@@ -2027,14 +2027,14 @@ with pg2:
                     fig_q.add_shape(type="line", y0=med_cpr, y1=med_cpr,
                         x0=float(q_data[col_qr].min())*0.9, x1=float(q_data[col_qr].max())*1.1,
                         line=dict(color=BORDER, width=1, dash="dot"))
-                    for ann, pos in [("⭐ Escalar",GREEN,"top right"),
-                                     ("⚠️ Revisar",PINK,"top left"),
-                                     ("💡 Potencial",CYANL,"bottom right"),
-                                     ("⏸ Pausar",MUTED,"bottom left")]:
+                    for ann, ann_clr, pos in [("⭐ Escalar",GREEN,"top right"),
+                                              ("⚠️ Revisar",PINK,"top left"),
+                                              ("💡 Potencial",CYANL,"bottom right"),
+                                              ("⏸ Pausar",MUTED,"bottom left")]:
                         xp = float(q_data[col_qr].max())*1.05 if "right" in pos else float(q_data[col_qr].min())*0.92
                         yp = float(q_data["__cpr__"].max())*1.08 if "top" in pos else float(q_data["__cpr__"].min())*0.88
                         fig_q.add_annotation(x=xp, y=yp, text=ann,
-                            font=dict(color=pos, size=9), showarrow=False, opacity=0.6)
+                            font=dict(color=ann_clr, size=9), showarrow=False, opacity=0.6)
                     fig_q.add_trace(go.Scatter(
                         x=res_vals_q, y=cpr_vals_q, mode="markers+text",
                         text=q_labels, textposition="top center",
