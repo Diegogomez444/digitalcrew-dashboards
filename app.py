@@ -2259,378 +2259,339 @@ with pg3:
         df_msg  = tg["df_msg"]
         stats   = tg["stats"]
         subs    = tg["subscribers"]
+        df_growth      = tg.get("df_growth", pd.DataFrame())
+        growth_error   = tg.get("growth_error", "")
+        has_gross_data = tg.get("has_gross_data", False)
 
         BASE_TG = dict(
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(20,25,41,0.6)",
             font=dict(family="Inter", color=MUTED, size=11),
-            margin=dict(l=10, r=10, t=70, b=10), height=340,
-            hovermode="x unified", hoverlabel=dict(bgcolor=CARD2, font_color=WHITE),
-            xaxis=dict(gridcolor=BORDER, showgrid=True, zeroline=False,
-                       tickfont=dict(color=MUTED, size=10)),
-            yaxis=dict(gridcolor=BORDER, showgrid=True, zeroline=False,
-                       tickfont=dict(color=MUTED, size=10)),
+            margin=dict(l=10, r=10, t=55, b=10), height=320,
+            hoverlabel=dict(bgcolor=CARD2, font_color=WHITE),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
                         font=dict(color=MUTED, size=10), bgcolor="rgba(0,0,0,0)")
         )
 
-        # ── KPIs ──────────────────────────────────────────────────────────────
-        st.markdown('<div class="slabel">Resumen del canal</div>', unsafe_allow_html=True)
-
+        # ── KPIs principales ──────────────────────────────────────────────────
         total_posts = len(df_msg) if not df_msg.empty else 0
-        avg_vistas  = int(df_msg["vistas"].mean()) if not df_msg.empty else 0
-        max_vistas  = int(df_msg["vistas"].max())  if not df_msg.empty else 0
+        avg_vistas  = int(df_msg["vistas"].mean())    if not df_msg.empty else 0
+        max_vistas  = int(df_msg["vistas"].max())     if not df_msg.empty else 0
+        avg_react   = round(df_msg["reacciones"].mean(), 1) if not df_msg.empty and "reacciones" in df_msg.columns else 0
 
-        # Crecimiento desde stats si disponible
         sub_prev = stats.get("subs_anterior")
         sub_curr = stats.get("subs_actual", subs)
-        if sub_prev and sub_curr:
-            crecim = sub_curr - sub_prev
-            crecim_txt = f"{'+'if crecim>=0 else ''}{crecim:,} vs período anterior"
-        else:
-            crecim_txt = ""
+        crecim_txt = (f"{'+'if (sub_curr-sub_prev)>=0 else ''}{(sub_curr-sub_prev):,} vs período anterior"
+                      if sub_prev and sub_curr else "")
 
         tk1, tk2, tk3, tk4 = st.columns(4)
-        tk1.markdown(kcard("Suscriptores", fmt_num(subs), "pu","pu",
-            sub=crecim_txt), unsafe_allow_html=True)
-        tk2.markdown(kcard("Posts analizados", fmt_num(total_posts), "plain"),
-            unsafe_allow_html=True)
-        tk3.markdown(kcard("Vistas promedio", fmt_num(avg_vistas), "cy","cy"),
-            unsafe_allow_html=True)
-        tk4.markdown(kcard("Mejor post", fmt_num(max_vistas)+" vistas", "gn","gn"),
-            unsafe_allow_html=True)
+        tk1.markdown(kcard("Suscriptores",    fmt_num(subs),              "pu","pu", sub=crecim_txt), unsafe_allow_html=True)
+        tk2.markdown(kcard("Posts analizados",fmt_num(total_posts),        "plain"),  unsafe_allow_html=True)
+        tk3.markdown(kcard("Vistas promedio", fmt_num(avg_vistas),         "cy","cy"), unsafe_allow_html=True)
+        tk4.markdown(kcard("Mejor post",      fmt_num(max_vistas)+" 👁",   "gn","gn"), unsafe_allow_html=True)
 
         if not df_msg.empty:
-            st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
 
-            # ── GRÁFICAS ──────────────────────────────────────────────────────
-            df_growth = tg.get("df_growth", pd.DataFrame())
+            # ── GRÁFICA PRINCIPAL: vistas con área ────────────────────────────
+            st.markdown('<div class="slabel">📈 Evolución de vistas por publicación</div>', unsafe_allow_html=True)
+            df_plot = df_msg.sort_values("fecha").tail(80)
+            fig_area = go.Figure()
+            fig_area.add_trace(go.Scatter(
+                x=df_plot["fecha"], y=df_plot["vistas"],
+                name="Vistas", mode="lines",
+                line=dict(color=PURPLEL, width=0),
+                fill="tozeroy", fillcolor="rgba(124,58,237,0.25)",
+                hovertemplate="<b>%{x|%d %b %Y}</b><br>%{y:,.0f} vistas<extra></extra>"
+            ))
+            fig_area.add_trace(go.Scatter(
+                x=df_plot["fecha"], y=df_plot["vistas"],
+                name="Vistas", mode="lines",
+                line=dict(color=PURPLEL, width=2),
+                showlegend=False,
+                hovertemplate="<b>%{x|%d %b %Y}</b><br>%{y:,.0f} vistas<extra></extra>"
+            ))
+            rolling = df_plot["vistas"].rolling(7, min_periods=1).mean()
+            fig_area.add_trace(go.Scatter(
+                x=df_plot["fecha"], y=rolling,
+                name="Media 7 posts", mode="lines",
+                line=dict(color=CYANL, width=2, dash="dot"),
+                hovertemplate="Media: %{y:.0f}<extra></extra>"
+            ))
+            avg_line = float(df_plot["vistas"].mean())
+            fig_area.add_hline(y=avg_line, line_color=MUTED2, line_width=1, line_dash="dot",
+                annotation_text=f"Promedio {avg_line:,.0f}", annotation_font_color=MUTED,
+                annotation_position="bottom right")
+            fig_area.update_layout(**{**BASE_TG, "height": 280},
+                title=dict(text="Vistas · últimos 80 posts", font=dict(color=WHITE,size=13,weight=700)),
+                xaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9), showgrid=False),
+                yaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=9), showgrid=True),
+                hovermode="x unified")
+            st.plotly_chart(fig_area, use_container_width=True, config={"displayModeBar":False})
 
-            tg_t1, tg_t2, tg_t3, tg_t4 = st.tabs([
-                "📈 Vistas por post", "🏆 Top posts", "📅 Actividad semanal", "👥 Crecimiento"
-            ])
+            # ── TOP POSTS — CARDS VISUALES ────────────────────────────────────
+            st.markdown('<div class="slabel">🏆 Top posts por vistas</div>', unsafe_allow_html=True)
+            df_top = df_msg.nlargest(8, "vistas").reset_index(drop=True)
+            max_v  = float(df_top["vistas"].iloc[0]) if not df_top.empty else 1
+            medals = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣"]
+            mc_colors = [AMBER,"#C0C0C0","#CD7F32",MUTED,MUTED,MUTED,MUTED,MUTED]
 
-            with tg_t1:
-                df_plot = df_msg.sort_values("fecha").head(100)
-                fig = go.Figure()
-                fig.add_trace(go.Bar(
-                    x=df_plot["fecha"],
-                    y=df_plot["vistas"],
-                    name="Vistas",
-                    marker=dict(
-                        color=df_plot["vistas"].values,
-                        colorscale=[[0, PURPLE],[0.5, PURPLEL],[1, CYANL]],
-                        opacity=0.9
-                    ),
-                    hovertemplate="<b>%{x|%d/%m/%Y}</b><br>Vistas: %{y:,.0f}<extra></extra>"
-                ))
-                fig.add_trace(go.Scatter(
-                    x=df_plot["fecha"],
-                    y=df_plot["vistas"].rolling(7, min_periods=1).mean(),
-                    name="Media 7 posts",
-                    line=dict(color=CYANL, width=2, dash="dot"),
-                    hovertemplate="%{y:.0f} (media)<extra></extra>"
-                ))
-                fig.update_layout(**BASE_TG, title=dict(
-                    text="Vistas por publicación · últimos 100 posts",
-                    font=dict(color=WHITE, size=13, weight=700)))
-                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-
-            with tg_t2:
-                df_top10 = df_msg.nlargest(10, "vistas").copy()
-                df_top10["label"] = df_top10.apply(
-                    lambda r: (r["texto"][:50]+"…" if len(r["texto"])>50 else r["texto"])
-                              or f"Post {r['id']}", axis=1)
-
-                fig2 = go.Figure(go.Bar(
-                    x=df_top10["vistas"],
-                    y=df_top10["label"],
-                    orientation="h",
-                    marker=dict(color=df_top10["vistas"].values,
-                        colorscale=[[0,PURPLE],[1,CYANL]], opacity=0.9),
-                    hovertemplate="<b>%{y}</b><br>Vistas: %{x:,.0f}<extra></extra>"
-                ))
-                fig2.update_layout(**{k:v for k,v in BASE_TG.items()
-                                      if k not in ("xaxis","yaxis","height")},
-                    height=400,
-                    title=dict(text="Top 10 publicaciones por vistas",
-                        font=dict(color=WHITE, size=13, weight=700)))
-                fig2.update_xaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
-                fig2.update_yaxes(gridcolor="rgba(0,0,0,0)",
-                                  tickfont=dict(color=WHITE, size=9), autorange="reversed")
-                st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
-
-                # Tabla top posts
-                st.markdown('<div class="slabel">Detalle top posts</div>', unsafe_allow_html=True)
-                tbl_top = df_top10[["fecha","vistas","reacciones","texto"]].copy()
-                tbl_top["fecha"] = tbl_top["fecha"].dt.strftime("%d/%m/%Y")
-                tbl_top.columns = ["Fecha","Vistas","Reacciones","Texto"]
-                st.dataframe(tbl_top.set_index("Fecha"), use_container_width=True)
-
-            with tg_t3:
-                if "semana" in df_msg.columns:
-                    df_sem = df_msg.groupby("semana").agg(
-                        posts=("id","count"),
-                        vistas=("vistas","sum"),
-                        avg_vistas=("vistas","mean"),
-                    ).reset_index()
-                    df_sem["semana"] = pd.to_datetime(df_sem["semana"])
-
-                    fig3 = make_subplots(specs=[[{"secondary_y": True}]])
-                    fig3.add_trace(go.Bar(
-                        x=df_sem["semana"], y=df_sem["vistas"], name="Vistas totales",
-                        marker=dict(color=PURPLEL, opacity=0.8),
-                        hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f} vistas</b><extra></extra>"
-                    ), secondary_y=False)
-                    fig3.add_trace(go.Scatter(
-                        x=df_sem["semana"], y=df_sem["posts"], name="Posts",
-                        line=dict(color=CYANL, width=2.5),
-                        mode="lines+markers", marker=dict(size=6, color=CYANL),
-                        hovertemplate="%{x|%d/%m}<br><b>%{y} posts</b><extra></extra>"
-                    ), secondary_y=True)
-                    fig3.update_layout(**{k:v for k,v in BASE_TG.items()
-                                          if k not in ("xaxis","yaxis")},
-                        title=dict(text="Actividad semanal · Vistas y publicaciones",
-                            font=dict(color=WHITE, size=13, weight=700)))
-                    fig3.update_xaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
-                    fig3.update_yaxes(title_text="Vistas", secondary_y=False,
-                        gridcolor=BORDER, tickfont=dict(color=MUTED, size=10))
-                    fig3.update_yaxes(title_text="Posts", secondary_y=True,
-                        gridcolor=BORDER, tickfont=dict(color=MUTED, size=10))
-                    st.plotly_chart(fig3, use_container_width=True,
-                        config={"displayModeBar": False})
-
-            with tg_t4:
-                growth_error   = tg.get("growth_error", "")
-                has_gross_data = tg.get("has_gross_data", False)
-                if df_growth.empty:
-                    if growth_error:
-                        st.error(f"Error al obtener estadísticas: {growth_error}")
-                    else:
-                        st.markdown(f"""
-<div style="background:{CARD};border:2px dashed {BORDER};border-radius:14px;
-  padding:2rem;text-align:center;margin-top:.5rem">
-  <div style="font-size:1.8rem;margin-bottom:.6rem">📊</div>
-  <div style="color:{WHITE};font-weight:700;font-size:.9rem;margin-bottom:.4rem">
-    Datos de crecimiento no disponibles</div>
-  <div style="color:{MUTED};font-size:.78rem;line-height:1.7">
-    Para ver entradas y salidas por día, el canal necesita tener<br>
-    habilitadas las <strong style="color:{CYANL}">estadísticas de canal</strong>
-    en Telegram (requiere +500 suscriptores<br>y permiso de admin "Ver estadísticas").
+            for idx, row in df_top.iterrows():
+                txt = str(row.get("texto","") or "").strip()
+                excerpt = (txt[:120]+"…" if len(txt) > 120 else txt) if txt else f"Post #{row.get('id','')}"
+                fecha_str = row["fecha"].strftime("%d %b %Y") if pd.notna(row["fecha"]) else "—"
+                vistas_v  = int(row["vistas"])
+                react_v   = int(row.get("reacciones", 0)) if pd.notna(row.get("reacciones", 0)) else 0
+                bar_pct   = int(vistas_v / max_v * 100)
+                mc = mc_colors[idx]
+                medal = medals[idx]
+                # Color accent por puesto
+                accent = AMBER if idx == 0 else (MUTED2 if idx > 2 else BORDER)
+                st.markdown(f"""
+<div style="background:{CARD2};border:1px solid {accent};border-radius:14px;
+  padding:.85rem 1.1rem;margin-bottom:.5rem">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+    <div style="display:flex;align-items:center;gap:.6rem">
+      <span style="font-size:1.1rem">{medal}</span>
+      <span style="color:{MUTED};font-size:.72rem">📅 {fecha_str}</span>
+    </div>
+    <div style="display:flex;gap:1rem;align-items:center">
+      <span style="color:{PURPLEL};font-weight:800;font-size:.9rem">👁 {vistas_v:,}</span>
+      {'<span style="color:'+PINK+';font-size:.8rem">❤️ '+str(react_v)+'</span>' if react_v else ''}
+    </div>
+  </div>
+  <div style="color:{WHITE};font-size:.78rem;line-height:1.6;margin-bottom:.55rem">{excerpt}</div>
+  <div style="background:{BORDER};border-radius:4px;height:4px;overflow:hidden">
+    <div style="background:linear-gradient(90deg,{PURPLE},{CYANL});
+      width:{bar_pct}%;height:100%;border-radius:4px"></div>
   </div>
 </div>""", unsafe_allow_html=True)
+
+            # ── DOS COLUMNAS: Actividad semanal + Dispersión vistas/reacciones ─
+            st.markdown("<div style='height:.3rem'></div>", unsafe_allow_html=True)
+            col_left, col_right = st.columns(2)
+
+            with col_left:
+                st.markdown('<div class="slabel">📅 Actividad semanal</div>', unsafe_allow_html=True)
+                if "semana" in df_msg.columns:
+                    df_sem = (df_msg.groupby("semana")
+                              .agg(posts=("id","count"), vistas=("vistas","sum"),
+                                   avg_v=("vistas","mean"))
+                              .reset_index())
+                    df_sem["semana"] = pd.to_datetime(df_sem["semana"])
+                    fig_sem = make_subplots(specs=[[{"secondary_y": True}]])
+                    fig_sem.add_trace(go.Bar(
+                        x=df_sem["semana"], y=df_sem["vistas"], name="Vistas",
+                        marker=dict(color=PURPLE, opacity=0.8),
+                        hovertemplate="%{x|%d/%m}<br><b>%{y:,.0f} vistas</b><extra></extra>"
+                    ), secondary_y=False)
+                    fig_sem.add_trace(go.Scatter(
+                        x=df_sem["semana"], y=df_sem["posts"], name="Posts",
+                        mode="lines+markers",
+                        line=dict(color=CYANL, width=2),
+                        marker=dict(size=5, color=CYANL),
+                        hovertemplate="%{x|%d/%m}<br><b>%{y} posts</b><extra></extra>"
+                    ), secondary_y=True)
+                    fig_sem.update_layout(
+                        **{k:v for k,v in BASE_TG.items() if k not in ("height",)},
+                        height=280,
+                        title=dict(text="Vistas y posts por semana", font=dict(color=WHITE,size=12,weight=700)))
+                    fig_sem.update_xaxes(gridcolor=BORDER, tickfont=dict(color=MUTED,size=8))
+                    fig_sem.update_yaxes(gridcolor=BORDER, tickfont=dict(color=MUTED,size=8), secondary_y=False)
+                    fig_sem.update_yaxes(gridcolor="rgba(0,0,0,0)", tickfont=dict(color=CYANL,size=8), secondary_y=True)
+                    st.plotly_chart(fig_sem, use_container_width=True, config={"displayModeBar":False})
+
+            with col_right:
+                st.markdown('<div class="slabel">💬 Vistas vs Reacciones</div>', unsafe_allow_html=True)
+                if "reacciones" in df_msg.columns:
+                    df_sc = df_msg.dropna(subset=["vistas","reacciones"]).copy()
+                    df_sc = df_sc[df_sc["reacciones"] >= 0]
+                    txt_sc = df_sc.apply(lambda r: (str(r.get("texto",""))[:40] or f"Post {r.get('id','')}"), axis=1)
+                    fig_sc = go.Figure(go.Scatter(
+                        x=df_sc["vistas"], y=df_sc["reacciones"],
+                        mode="markers", text=txt_sc,
+                        marker=dict(
+                            size=9, opacity=0.75,
+                            color=df_sc["vistas"].values,
+                            colorscale=[[0,PURPLE],[0.5,PURPLEL],[1,CYANL]],
+                            line=dict(width=0.5, color=BORDER)
+                        ),
+                        hovertemplate="<b>%{text}</b><br>👁 %{x:,.0f} vistas<br>❤️ %{y} reacciones<extra></extra>"
+                    ))
+                    fig_sc.update_layout(
+                        **{k:v for k,v in BASE_TG.items() if k not in ("height","hovermode")},
+                        height=280,
+                        title=dict(text="¿Más vistas = más reacciones?", font=dict(color=WHITE,size=12,weight=700)),
+                        xaxis=dict(title=dict(text="Vistas", font=dict(color=MUTED,size=9)),
+                                   gridcolor=BORDER, tickfont=dict(color=MUTED,size=8)),
+                        yaxis=dict(title=dict(text="Reacciones", font=dict(color=MUTED,size=9)),
+                                   gridcolor=BORDER, tickfont=dict(color=MUTED,size=8)),
+                        hovermode="closest"
+                    )
+                    st.plotly_chart(fig_sc, use_container_width=True, config={"displayModeBar":False})
+
+            # ── CRECIMIENTO ───────────────────────────────────────────────────
+            st.markdown(f'<div style="border-top:1px solid {BORDER};margin:1rem 0 .6rem 0"></div>', unsafe_allow_html=True)
+            st.markdown('<div class="slabel">👥 Crecimiento de suscriptores</div>', unsafe_allow_html=True)
+
+            if df_growth.empty:
+                st.markdown(f"""
+<div style="background:{CARD};border:1px dashed {BORDER};border-radius:12px;
+  padding:1.2rem;text-align:center">
+  <div style="color:{MUTED};font-size:.8rem;line-height:1.8">
+    Datos de crecimiento no disponibles.<br>
+    El canal necesita <strong style="color:{CYANL}">+500 suscriptores</strong>
+    y permiso de admin <strong style="color:{CYANL}">Ver estadísticas</strong>.
+  </div>
+</div>""", unsafe_allow_html=True)
+            else:
+                gmin = df_growth["fecha"].dt.date.min()
+                gmax = df_growth["fecha"].dt.date.max()
+                if "tg_g_sel"   not in st.session_state: st.session_state.tg_g_sel   = "Últimos 30 días"
+                if "tg_g_start" not in st.session_state: st.session_state.tg_g_start = max(gmin, gmax - timedelta(days=29))
+                if "tg_g_end"   not in st.session_state: st.session_state.tg_g_end   = gmax
+
+                OPCIONES_G = {
+                    "Ayer":            (gmax, gmax),
+                    "Últimos 7 días":  (gmax - timedelta(days=6),  gmax),
+                    "Últimos 14 días": (gmax - timedelta(days=13), gmax),
+                    "Últimos 30 días": (gmax - timedelta(days=29), gmax),
+                    "Últimos 60 días": (gmax - timedelta(days=59), gmax),
+                    "Últimos 90 días": (gmax - timedelta(days=89), gmax),
+                    "Todo el período": (gmin, gmax),
+                    "Personalizado":   (st.session_state.tg_g_start, st.session_state.tg_g_end),
+                }
+                cur_sel = st.session_state.tg_g_sel
+                if cur_sel in OPCIONES_G and cur_sel != "Personalizado":
+                    cur_s, cur_e = OPCIONES_G[cur_sel]
                 else:
-                    # Filtro de fechas
-                    gmin = df_growth["fecha"].dt.date.min()
-                    gmax = df_growth["fecha"].dt.date.max()
+                    cur_s, cur_e = st.session_state.tg_g_start, st.session_state.tg_g_end
+                cur_s = max(gmin, min(gmax, cur_s)); cur_e = max(gmin, min(gmax, cur_e))
+                if cur_s > cur_e: cur_s = cur_e
 
-                    # Session state para el filtro de crecimiento
-                    if "tg_g_sel" not in st.session_state:
-                        st.session_state.tg_g_sel   = "Últimos 30 días"
-                    if "tg_g_start" not in st.session_state:
-                        st.session_state.tg_g_start = max(gmin, gmax - timedelta(days=29))
-                    if "tg_g_end" not in st.session_state:
-                        st.session_state.tg_g_end   = gmax
+                def _fdes(d):
+                    M = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"]
+                    return f"{d.day} {M[d.month-1]} {d.year}"
 
-                    OPCIONES_G = {
-                        "Ayer":            (gmax, gmax),
-                        "Últimos 7 días":  (gmax - timedelta(days=6),  gmax),
-                        "Últimos 14 días": (gmax - timedelta(days=13), gmax),
-                        "Últimos 28 días": (gmax - timedelta(days=27), gmax),
-                        "Últimos 30 días": (gmax - timedelta(days=29), gmax),
-                        "Últimos 60 días": (gmax - timedelta(days=59), gmax),
-                        "Últimos 90 días": (gmax - timedelta(days=89), gmax),
-                        "Este mes":        (date.today().replace(day=1), gmax),
-                        "Todo el período": (gmin, gmax),
-                        "Personalizado":   (st.session_state.tg_g_start, st.session_state.tg_g_end),
-                    }
+                rango_txt = _fdes(cur_s) if cur_s == cur_e else f"{_fdes(cur_s)} – {_fdes(cur_e)}"
+                lc, pc = st.columns([4, 3])
+                with lc:
+                    st.markdown(f"<div style='padding-top:.55rem;font-size:.72rem;color:{MUTED}'>"
+                                f"Período: <strong style='color:{CYANL}'>{rango_txt}</strong></div>",
+                                unsafe_allow_html=True)
+                with pc:
+                    with st.popover(f"📅 {rango_txt} ▾", use_container_width=True):
+                        ops = list(OPCIONES_G.keys())
+                        ns = st.radio("Período", ops, index=ops.index(cur_sel) if cur_sel in ops else 2,
+                                      label_visibility="collapsed", key="tg_g_radio")
+                        st.session_state.tg_g_sel = ns
+                        if ns == "Personalizado":
+                            p1, p2 = st.columns(2)
+                            with p1:
+                                sv = st.date_input("Desde", value=st.session_state.tg_g_start,
+                                                   min_value=gmin, max_value=gmax, key="tg_g_ds")
+                                st.session_state.tg_g_start = sv
+                            with p2:
+                                ev = st.date_input("Hasta", value=st.session_state.tg_g_end,
+                                                   min_value=gmin, max_value=gmax, key="tg_g_de")
+                                st.session_state.tg_g_end = ev
 
-                    cur_sel = st.session_state.tg_g_sel
-                    if cur_sel in OPCIONES_G and cur_sel != "Personalizado":
-                        cur_start, cur_end = OPCIONES_G[cur_sel]
-                    else:
-                        cur_start = st.session_state.tg_g_start
-                        cur_end   = st.session_state.tg_g_end
-                    cur_start = max(gmin, min(gmax, cur_start))
-                    cur_end   = max(gmin, min(gmax, cur_end))
-                    if cur_start > cur_end:
-                        cur_start = cur_end
+                if st.session_state.tg_g_sel != "Personalizado":
+                    g_start, g_end = OPCIONES_G[st.session_state.tg_g_sel]
+                else:
+                    g_start, g_end = st.session_state.tg_g_start, st.session_state.tg_g_end
+                g_start = max(gmin, min(gmax, g_start)); g_end = max(gmin, min(gmax, g_end))
+                if g_start > g_end: g_start = g_end
 
-                    def fmt_date_es(d):
-                        meses = ["ene","feb","mar","abr","may","jun",
-                                 "jul","ago","sep","oct","nov","dic"]
-                        return f"{d.day} {meses[d.month-1]} {d.year}"
+                dg = df_growth[(df_growth["fecha"].dt.date >= g_start) &
+                               (df_growth["fecha"].dt.date <= g_end)].copy()
 
-                    if cur_start == cur_end:
-                        btn_lbl    = f"📅  {fmt_date_es(cur_start)}  ▾"
-                        rango_txt  = fmt_date_es(cur_start)
-                    else:
-                        btn_lbl    = f"📅  {fmt_date_es(cur_start)} – {fmt_date_es(cur_end)}  ▾"
-                        rango_txt  = f"{fmt_date_es(cur_start)} – {fmt_date_es(cur_end)}"
+                neto    = int(dg["net"].sum()) if "net" in dg.columns else int((dg["entradas"]-dg["salidas"]).sum())
+                sub_fin = int(dg["miembros"].iloc[-1]) if not dg.empty else subs
 
-                    lbl_col, pop_col = st.columns([5, 4])
-                    with lbl_col:
-                        st.markdown(
-                            f"<div style='padding-top:.6rem;font-size:.72rem;color:{MUTED};font-weight:500'>"
-                            f"Período analizado: <strong style='color:{CYANL}'>{rango_txt}</strong></div>",
-                            unsafe_allow_html=True
-                        )
-                    with pop_col:
-                        with st.popover(btn_lbl, use_container_width=True):
-                            opciones_lista = list(OPCIONES_G.keys())
-                            idx_def = opciones_lista.index(cur_sel) if cur_sel in opciones_lista else 5
-                            new_sel = st.radio("Período", opciones_lista, index=idx_def,
-                                               label_visibility="collapsed", key="tg_g_radio")
-                            st.session_state.tg_g_sel = new_sel
-                            if new_sel == "Personalizado":
-                                pc1, pc2 = st.columns(2)
-                                with pc1:
-                                    ns = st.date_input("Desde",
-                                        value=st.session_state.tg_g_start,
-                                        min_value=gmin, max_value=gmax, key="tg_g_ds")
-                                    st.session_state.tg_g_start = ns
-                                with pc2:
-                                    ne = st.date_input("Hasta",
-                                        value=st.session_state.tg_g_end,
-                                        min_value=gmin, max_value=gmax, key="tg_g_de")
-                                    st.session_state.tg_g_end = ne
+                if has_gross_data:
+                    total_ent = int(dg["entradas"].sum()); total_sal = int(dg["salidas"].sum())
+                    gk1,gk2,gk3,gk4 = st.columns(4)
+                    gk1.markdown(kcard("Suscriptores cierre", fmt_num(sub_fin), "pu","pu"), unsafe_allow_html=True)
+                    gk2.markdown(kcard("Entradas", f"+{fmt_num(total_ent)}", "gn","gn"), unsafe_allow_html=True)
+                    gk3.markdown(kcard("Salidas",  f"-{fmt_num(total_sal)}", "pk","pk"), unsafe_allow_html=True)
+                    gk4.markdown(kcard("Crecimiento neto", f"{'+'if neto>=0 else ''}{fmt_num(neto)}",
+                                       "cy" if neto>=0 else "pk", "cy" if neto>=0 else "pk"), unsafe_allow_html=True)
+                else:
+                    dias_pos = int((dg["net"] > 0).sum()) if "net" in dg.columns else 0
+                    dias_neg = int((dg["net"] < 0).sum()) if "net" in dg.columns else 0
+                    gk1,gk2,gk3,gk4 = st.columns(4)
+                    gk1.markdown(kcard("Suscriptores cierre", fmt_num(sub_fin), "pu","pu"), unsafe_allow_html=True)
+                    gk2.markdown(kcard("Crecimiento neto", f"{'+'if neto>=0 else ''}{fmt_num(neto)}",
+                                       "gn" if neto>=0 else "pk", "gn" if neto>=0 else "pk"), unsafe_allow_html=True)
+                    gk3.markdown(kcard("Días con crecimiento", fmt_num(dias_pos), "cy","cy"), unsafe_allow_html=True)
+                    gk4.markdown(kcard("Días con pérdida", fmt_num(dias_neg), "plain"), unsafe_allow_html=True)
 
-                    if st.session_state.tg_g_sel != "Personalizado":
-                        g_start, g_end = OPCIONES_G[st.session_state.tg_g_sel]
-                    else:
-                        g_start = st.session_state.tg_g_start
-                        g_end   = st.session_state.tg_g_end
+                st.markdown("<div style='height:.4rem'></div>", unsafe_allow_html=True)
+                gcol1, gcol2 = st.columns(2)
 
-                    # Clampear al rango disponible en ambos extremos
-                    g_start = max(gmin, min(gmax, g_start))
-                    g_end   = max(gmin, min(gmax, g_end))
-                    if g_start > g_end:
-                        g_start = g_end
-
-                    dg = df_growth[(df_growth["fecha"].dt.date >= g_start) &
-                                   (df_growth["fecha"].dt.date <= g_end)].copy()
-
-                    # KPIs del período
-                    neto     = int(dg["net"].sum()) if "net" in dg.columns else int((dg["entradas"] - dg["salidas"]).sum())
-                    sub_fin  = int(dg["miembros"].iloc[-1]) if not dg.empty else subs
-                    sub_ini  = int(dg["miembros"].iloc[0])  if not dg.empty else subs
-
-                    if has_gross_data:
-                        total_ent = int(dg["entradas"].sum())
-                        total_sal = int(dg["salidas"].sum())
-                        gk1, gk2, gk3, gk4 = st.columns(4)
-                        gk1.markdown(kcard("Suscriptores al cierre", fmt_num(sub_fin), "pu","pu"), unsafe_allow_html=True)
-                        gk2.markdown(kcard("Entradas período", f"+{fmt_num(total_ent)}", "gn","gn"), unsafe_allow_html=True)
-                        gk3.markdown(kcard("Salidas período", f"-{fmt_num(total_sal)}", "pk","pk"), unsafe_allow_html=True)
-                        gk4.markdown(kcard("Crecimiento neto",
-                            f"{'+'if neto>=0 else ''}{fmt_num(neto)}",
-                            "cy" if neto >= 0 else "pk",
-                            "cy" if neto >= 0 else "pk"), unsafe_allow_html=True)
-                    else:
-                        dias_pos = int((dg["net"] > 0).sum()) if "net" in dg.columns else 0
-                        dias_neg = int((dg["net"] < 0).sum()) if "net" in dg.columns else 0
-                        gk1, gk2, gk3, gk4 = st.columns(4)
-                        gk1.markdown(kcard("Suscriptores al cierre", fmt_num(sub_fin), "pu","pu"), unsafe_allow_html=True)
-                        gk2.markdown(kcard("Crecimiento neto período",
-                            f"{'+'if neto>=0 else ''}{fmt_num(neto)}",
-                            "gn" if neto >= 0 else "pk",
-                            "gn" if neto >= 0 else "pk"), unsafe_allow_html=True)
-                        gk3.markdown(kcard("Días con crecimiento", fmt_num(dias_pos), "cy","cy"), unsafe_allow_html=True)
-                        gk4.markdown(kcard("Días con pérdida", fmt_num(dias_neg), "plain"), unsafe_allow_html=True)
-
-                    st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
-
-                    # Gráfica miembros totales
+                with gcol1:
                     fig_g1 = go.Figure()
                     fig_g1.add_trace(go.Scatter(
                         x=dg["fecha"], y=dg["miembros"], name="Miembros",
-                        line=dict(color=PURPLEL, width=2.5),
-                        fill="tozeroy", fillcolor="rgba(168,85,247,0.12)",
-                        hovertemplate="%{x|%d/%m/%Y}<br><b>%{y:,.0f} miembros</b><extra></extra>"
+                        mode="lines",
+                        line=dict(color=PURPLEL, width=2),
+                        fill="tozeroy", fillcolor="rgba(168,85,247,0.15)",
+                        hovertemplate="%{x|%d/%m/%Y}<br><b>%{y:,.0f} suscriptores</b><extra></extra>"
                     ))
-                    fig_g1.update_layout(**{k:v for k,v in BASE_TG.items() if k not in ("xaxis","yaxis")},
-                        title=dict(text="Evolución de suscriptores",
-                            font=dict(color=WHITE, size=13, weight=700)))
-                    fig_g1.update_xaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
-                    fig_g1.update_yaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
-                    st.plotly_chart(fig_g1, use_container_width=True, config={"displayModeBar": False})
+                    fig_g1.update_layout(**{**BASE_TG, "height": 260},
+                        title=dict(text="Evolución de suscriptores", font=dict(color=WHITE,size=12,weight=700)),
+                        xaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=8), showgrid=False),
+                        yaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=8)),
+                        hovermode="x unified")
+                    st.plotly_chart(fig_g1, use_container_width=True, config={"displayModeBar":False})
 
-                    # Segunda gráfica: entradas/salidas si hay datos brutos, si no cambio neto
+                with gcol2:
                     fig_g2 = go.Figure()
                     if has_gross_data:
-                        fig_g2.add_trace(go.Bar(
-                            x=dg["fecha"], y=dg["entradas"], name="Entradas",
+                        fig_g2.add_trace(go.Bar(x=dg["fecha"], y=dg["entradas"], name="Entradas",
                             marker=dict(color=GREEN, opacity=0.85),
-                            hovertemplate="%{x|%d/%m/%Y}<br><b>+%{y} entradas</b><extra></extra>"
-                        ))
-                        fig_g2.add_trace(go.Bar(
-                            x=dg["fecha"], y=-dg["salidas"], name="Salidas",
+                            hovertemplate="%{x|%d/%m}<br><b>+%{y}</b><extra></extra>"))
+                        fig_g2.add_trace(go.Bar(x=dg["fecha"], y=-dg["salidas"], name="Salidas",
                             marker=dict(color=RED, opacity=0.85),
-                            hovertemplate="%{x|%d/%m/%Y}<br><b>-%{y} salidas</b><extra></extra>"
-                        ))
-                        g2_title = "Entradas y salidas diarias"
+                            hovertemplate="%{x|%d/%m}<br><b>-%{y}</b><extra></extra>"))
+                        g2t = "Entradas y salidas diarias"
                     else:
-                        # Cambio neto: verde si creció, rojo si perdió
-                        net_col = dg["net"] if "net" in dg.columns else (dg["entradas"] - dg["salidas"])
-                        bar_colors = [GREEN if v >= 0 else RED for v in net_col]
-                        fig_g2.add_trace(go.Bar(
-                            x=dg["fecha"], y=net_col,
-                            name="Cambio neto",
-                            marker=dict(color=bar_colors, opacity=0.85),
-                            hovertemplate=(
-                                "%{x|%d/%m/%Y}<br>"
-                                "<b>%{y:+d} suscriptores</b><br>"
-                                "<span style='color:#94A3B8'>Verde = más entradas que salidas<br>"
-                                "Rojo = más salidas que entradas</span>"
-                                "<extra></extra>"
-                            )
-                        ))
+                        net_col = dg["net"] if "net" in dg.columns else (dg["entradas"]-dg["salidas"])
+                        fig_g2.add_trace(go.Bar(x=dg["fecha"], y=net_col, name="Neto",
+                            marker=dict(color=[GREEN if v>=0 else RED for v in net_col], opacity=0.85),
+                            hovertemplate="%{x|%d/%m}<br><b>%{y:+d}</b><extra></extra>"))
                         fig_g2.add_hline(y=0, line_color=MUTED2, line_width=1)
-                        g2_title = "Cambio neto diario de suscriptores"
+                        g2t = "Cambio neto diario"
+                    fig_g2.update_layout(**{**BASE_TG, "height": 260}, barmode="relative",
+                        title=dict(text=g2t, font=dict(color=WHITE,size=12,weight=700)),
+                        xaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=8), showgrid=False),
+                        yaxis=dict(gridcolor=BORDER, tickfont=dict(color=MUTED,size=8),
+                                   zeroline=True, zerolinecolor=MUTED2),
+                        hovermode="x unified")
+                    st.plotly_chart(fig_g2, use_container_width=True, config={"displayModeBar":False})
 
-                    fig_g2.update_layout(**{k:v for k,v in BASE_TG.items() if k not in ("xaxis","yaxis")},
-                        barmode="relative",
-                        title=dict(text=g2_title, font=dict(color=WHITE, size=13, weight=700)))
-                    fig_g2.update_xaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9))
-                    fig_g2.update_yaxes(gridcolor=BORDER, tickfont=dict(color=MUTED, size=9),
-                                        zeroline=True, zerolinecolor=MUTED2)
-                    st.plotly_chart(fig_g2, use_container_width=True, config={"displayModeBar": False})
+                with st.expander("Ver detalle diario"):
+                    if has_gross_data:
+                        tbl_g = dg[["fecha","miembros","entradas","salidas"]].copy()
+                        tbl_g["fecha"] = tbl_g["fecha"].dt.strftime("%d/%m/%Y")
+                        tbl_g.columns = ["Fecha","Miembros","Entradas","Salidas"]
+                    else:
+                        net_col2 = dg["net"] if "net" in dg.columns else (dg["entradas"]-dg["salidas"])
+                        tbl_g = dg[["fecha","miembros"]].copy()
+                        tbl_g["neto"] = net_col2.values
+                        tbl_g["fecha"] = tbl_g["fecha"].dt.strftime("%d/%m/%Y")
+                        tbl_g.columns = ["Fecha","Miembros","Neto"]
+                    st.dataframe(tbl_g.set_index("Fecha"), use_container_width=True)
 
-                    if not has_gross_data:
-                        st.markdown(
-                            f"<div style='font-size:.68rem;color:{MUTED};margin-top:-.5rem'>"
-                            "⚠ Cambio neto: una barra verde significa que ese día entró más gente de la que salió, "
-                            "pero pueden haber habido salidas. Los datos brutos de entradas/salidas por separado "
-                            "no están disponibles para este canal.</div>",
-                            unsafe_allow_html=True
-                        )
-
-                    # Tabla detalle
-                    with st.expander("Ver detalle diario"):
-                        if has_gross_data:
-                            tbl_g = dg[["fecha","miembros","entradas","salidas"]].copy()
-                            tbl_g["fecha"] = tbl_g["fecha"].dt.strftime("%d/%m/%Y")
-                            tbl_g.columns  = ["Fecha","Miembros","Entradas","Salidas"]
-                        else:
-                            net_col = dg["net"] if "net" in dg.columns else (dg["entradas"] - dg["salidas"])
-                            tbl_g = dg[["fecha","miembros"]].copy()
-                            tbl_g["neto"] = net_col.values
-                            tbl_g["fecha"] = tbl_g["fecha"].dt.strftime("%d/%m/%Y")
-                            tbl_g.columns  = ["Fecha","Miembros","Neto"]
-                        st.dataframe(tbl_g.set_index("Fecha"), use_container_width=True)
-
-            # ── STATS AVANZADAS ───────────────────────────────────────────────
-            if stats:
-                st.markdown('<div class="slabel">Estadísticas avanzadas</div>',
-                    unsafe_allow_html=True)
-                sa1, sa2, sa3, sa4 = st.columns(4)
-                sa1.markdown(kcard("Suscriptores actuales",
-                    fmt_num(stats.get("subs_actual", subs)), "pu","pu"), unsafe_allow_html=True)
-                sa2.markdown(kcard("Suscriptores anterior",
-                    fmt_num(stats.get("subs_anterior",0)), "plain"), unsafe_allow_html=True)
-                sa3.markdown(kcard("Vistas prom./post",
-                    str(stats.get("vistas_post","—")), "cy","cy"), unsafe_allow_html=True)
-                sa4.markdown(kcard("Reacciones prom./post",
-                    str(stats.get("shares_post","—")), "plain"), unsafe_allow_html=True)
+        # ── STATS AVANZADAS ───────────────────────────────────────────────────
+        if stats:
+            st.markdown(f'<div style="border-top:1px solid {BORDER};margin:.8rem 0 .5rem 0"></div>', unsafe_allow_html=True)
+            st.markdown('<div class="slabel">📊 Estadísticas avanzadas</div>', unsafe_allow_html=True)
+            sa1, sa2, sa3, sa4 = st.columns(4)
+            sa1.markdown(kcard("Suscriptores actuales", fmt_num(stats.get("subs_actual", subs)), "pu","pu"), unsafe_allow_html=True)
+            sa2.markdown(kcard("Suscriptores anterior", fmt_num(stats.get("subs_anterior",0)), "plain"), unsafe_allow_html=True)
+            sa3.markdown(kcard("Vistas prom./post",     str(stats.get("vistas_post","—")), "cy","cy"), unsafe_allow_html=True)
+            sa4.markdown(kcard("Reacciones prom./post", str(stats.get("shares_post","—")), "plain"), unsafe_allow_html=True)
 
 # ── FOOTER ─────────────────────────────────────────────────────────────────────
 st.markdown(f"""
