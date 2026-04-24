@@ -1086,70 +1086,70 @@ with pg2:
     )
 
     # ── UPLOADER COMPACTO ─────────────────────────────────────────────────────
-    with st.expander("➕  Subir nuevo reporte", expanded=(len(reports) == 0)):
-        uc1, uc2 = st.columns([3, 1])
-        with uc1:
-            uploaded_file = st.file_uploader(
-                "CSV Meta Ads", type=["csv"], label_visibility="collapsed"
-            )
-        with uc2:
-            sel_lbl   = st.selectbox("Mes", month_labels, index=0)
-            sel_month = month_opts[month_labels.index(sel_lbl)]
+    st.markdown('<div class="slabel">Subir reporte</div>', unsafe_allow_html=True)
+    uc1, uc2 = st.columns([3, 1])
+    with uc1:
+        uploaded_file = st.file_uploader(
+            "CSV Meta Ads", type=["csv"], label_visibility="collapsed"
+        )
+    with uc2:
+        sel_lbl   = st.selectbox("Mes del reporte", month_labels, index=0)
+        sel_month = month_opts[month_labels.index(sel_lbl)]
 
-        if uploaded_file:
+    if uploaded_file:
+        try:
+            raw = uploaded_file.read()
             try:
-                raw = uploaded_file.read()
-                try:
-                    df_up = pd.read_csv(io.BytesIO(raw), thousands=".", decimal=",",
-                                        dtype=str, keep_default_na=False)
-                except Exception:
-                    df_up = pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False)
-                df_up.columns = [str(c).strip() for c in df_up.columns]
+                df_up = pd.read_csv(io.BytesIO(raw), thousands=".", decimal=",",
+                                    dtype=str, keep_default_na=False)
+            except Exception:
+                df_up = pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False)
+            df_up.columns = [str(c).strip() for c in df_up.columns]
 
-                col_spend   = find_col(df_up, "spend")
-                col_results = find_col(df_up, "results")
-                col_cpr     = find_col(df_up, "cpr")
-                col_impr    = find_col(df_up, "impressions")
-                col_clicks  = find_col(df_up, "clicks")
-                col_ctr     = find_col(df_up, "ctr")
-                col_reach   = find_col(df_up, "reach")
-                col_freq    = find_col(df_up, "frequency")
-                col_camp    = find_col(df_up, "campaign")
-                col_adset   = find_col(df_up, "adset")
-                col_ad      = find_col(df_up, "ad")
+            col_spend   = find_col(df_up, "spend")
+            col_results = find_col(df_up, "results")
+            col_cpr     = find_col(df_up, "cpr")
+            col_impr    = find_col(df_up, "impressions")
+            col_clicks  = find_col(df_up, "clicks")
+            col_ctr     = find_col(df_up, "ctr")
+            col_reach   = find_col(df_up, "reach")
+            col_freq    = find_col(df_up, "frequency")
+            col_camp    = find_col(df_up, "campaign")
+            col_adset   = find_col(df_up, "adset")
+            col_ad      = find_col(df_up, "ad")
 
-                for c in [col_spend, col_results, col_cpr, col_impr,
-                          col_clicks, col_ctr, col_reach, col_freq]:
-                    if c:
-                        df_up[c] = df_up[c].apply(parse_meta_num)
+            for c in [col_spend, col_results, col_cpr, col_impr,
+                      col_clicks, col_ctr, col_reach, col_freq]:
+                if c:
+                    df_up[c] = df_up[c].apply(parse_meta_num)
 
-                if col_ad:      rtype = "Anuncios"
-                elif col_adset: rtype = "Públicos"
-                elif col_camp:  rtype = "Campañas"
-                else:           rtype = "General"
+            if col_ad:      rtype = "Anuncios"
+            elif col_adset: rtype = "Públicos"
+            elif col_camp:  rtype = "Campañas"
+            else:           rtype = "General"
 
-                name_col = col_ad or col_adset or col_camp
-                if name_col:
-                    df_up = df_up[df_up[name_col].apply(
-                        lambda x: str(x).strip().lower() not in SKIP_VALS)]
+            name_col = col_ad or col_adset or col_camp
+            if name_col:
+                df_up = df_up[df_up[name_col].apply(
+                    lambda x: str(x).strip().lower() not in SKIP_VALS)]
 
-                entry = {
-                    "name": uploaded_file.name, "type": rtype,
-                    "month": sel_month, "month_label": sel_lbl,
-                    "df": df_up,
-                    "cols": dict(spend=col_spend, results=col_results, cpr=col_cpr,
-                                 impressions=col_impr, clicks=col_clicks, ctr=col_ctr,
-                                 reach=col_reach, freq=col_freq,
-                                 campaign=col_camp, adset=col_adset, ad=col_ad)
-                }
-                # Replace if same month+type already exists
-                reports = [r for r in reports
-                           if not (r.get("month") == sel_month and r["type"] == rtype)]
-                reports.append(entry)
-                st.session_state.meta_reports = reports
-                st.success(f"✓  {rtype} · {sel_lbl} · {len(df_up)} filas cargadas")
-            except Exception as e:
-                st.error(f"Error leyendo el archivo: {e}")
+            entry = {
+                "name": uploaded_file.name, "type": rtype,
+                "month": sel_month, "month_label": sel_lbl,
+                "df": df_up,
+                "cols": dict(spend=col_spend, results=col_results, cpr=col_cpr,
+                             impressions=col_impr, clicks=col_clicks, ctr=col_ctr,
+                             reach=col_reach, freq=col_freq,
+                             campaign=col_camp, adset=col_adset, ad=col_ad)
+            }
+            # Replace if same month+type already exists
+            reports = [r for r in reports
+                       if not (r.get("month") == sel_month and r["type"] == rtype)]
+            reports.append(entry)
+            st.session_state.meta_reports = reports
+            st.success(f"✓  {rtype} · {sel_lbl} · {len(df_up)} filas cargadas")
+        except Exception as e:
+            st.error(f"Error leyendo el archivo: {e}")
 
     # ── CHIPS DE REPORTES CARGADOS ────────────────────────────────────────────
     if reports:
