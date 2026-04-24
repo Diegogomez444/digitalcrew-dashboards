@@ -8,6 +8,7 @@ from datetime import date, timedelta, datetime
 import io
 import os
 import json
+import html as _html
 
 # ── CONFIG ─────────────────────────────────────────────────────────────────────
 try:
@@ -2337,15 +2338,15 @@ with pg3:
 
             for idx, row in df_top.iterrows():
                 txt = str(row.get("texto","") or "").strip()
-                excerpt = (txt[:120]+"…" if len(txt) > 120 else txt) if txt else f"Post #{row.get('id','')}"
-                fecha_str = row["fecha"].strftime("%d %b %Y") if pd.notna(row["fecha"]) else "—"
+                excerpt_raw = (txt[:120]+"…" if len(txt) > 120 else txt) if txt else f"Post #{row.get('id','')}"
+                excerpt = _html.escape(excerpt_raw)
+                fecha_str = _html.escape(row["fecha"].strftime("%d %b %Y") if pd.notna(row["fecha"]) else "—")
                 vistas_v  = int(row["vistas"])
                 react_v   = int(row.get("reacciones", 0)) if pd.notna(row.get("reacciones", 0)) else 0
                 bar_pct   = int(vistas_v / max_v * 100)
-                mc = mc_colors[idx]
                 medal = medals[idx]
-                # Color accent por puesto
                 accent = AMBER if idx == 0 else (MUTED2 if idx > 2 else BORDER)
+                react_html = f'<span style="color:{PINK};font-size:.8rem">❤️ {react_v}</span>' if react_v else ""
                 st.markdown(f"""
 <div style="background:{CARD2};border:1px solid {accent};border-radius:14px;
   padding:.85rem 1.1rem;margin-bottom:.5rem">
@@ -2356,7 +2357,7 @@ with pg3:
     </div>
     <div style="display:flex;gap:1rem;align-items:center">
       <span style="color:{PURPLEL};font-weight:800;font-size:.9rem">👁 {vistas_v:,}</span>
-      {'<span style="color:'+PINK+';font-size:.8rem">❤️ '+str(react_v)+'</span>' if react_v else ''}
+      {react_html}
     </div>
   </div>
   <div style="color:{WHITE};font-size:.78rem;line-height:1.6;margin-bottom:.55rem">{excerpt}</div>
