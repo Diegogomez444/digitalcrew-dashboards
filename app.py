@@ -105,7 +105,8 @@ def delta_pct(current, prev):
 META_COL = {
     "spend":       ["importe gastado (cop)","importe gastado (usd)","importe gastado",
                     "amount spent (cop)","amount spent (usd)","amount spent","gasto","spend"],
-    "results":     ["resultados","resultado","results","result"],
+    "results":     ["resultados","resultado","results","result",
+                    "registros completados","registros","registrations completed"],
     "cpr":         ["costo por resultado","coste por resultado","cost per result","cpr"],
     "impressions": ["impresiones","impressions"],
     "clicks":      ["clics en el enlace","link clicks","clics (todos)","clics","clicks",
