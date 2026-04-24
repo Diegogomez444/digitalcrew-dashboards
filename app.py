@@ -103,17 +103,20 @@ def delta_pct(current, prev):
 
 # ── META ADS HELPERS ───────────────────────────────────────────────────────────
 META_COL = {
-    "spend":       ["importe gastado (cop)","importe gastado","amount spent (cop)","amount spent","gasto"],
-    "results":     ["resultados","results"],
-    "cpr":         ["costo por resultado","cost per result"],
+    "spend":       ["importe gastado (cop)","importe gastado (usd)","importe gastado",
+                    "amount spent (cop)","amount spent (usd)","amount spent","gasto","spend"],
+    "results":     ["resultados","resultado","results","result"],
+    "cpr":         ["costo por resultado","coste por resultado","cost per result","cpr"],
     "impressions": ["impresiones","impressions"],
-    "clicks":      ["clics en el enlace","link clicks","clics (todos)","clics","clicks"],
-    "ctr":         ["ctr (tasa de clics en el enlace)","ctr (link click-through rate)","ctr"],
+    "clicks":      ["clics en el enlace","link clicks","clics (todos)","clics","clicks",
+                    "clics en enlace"],
+    "ctr":         ["ctr (tasa de clics en el enlace)","ctr (link click-through rate)",
+                    "tasa de clics en el enlace","ctr"],
     "reach":       ["alcance","reach"],
     "frequency":   ["frecuencia","frequency"],
-    "campaign":    ["nombre de la campaña","campaign name"],
-    "adset":       ["nombre del conjunto de anuncios","ad set name"],
-    "ad":          ["nombre del anuncio","ad name"],
+    "campaign":    ["nombre de la campaña","nombre de campaña","campaign name","campaña"],
+    "adset":       ["nombre del conjunto de anuncios","conjunto de anuncios","ad set name","adset"],
+    "ad":          ["nombre del anuncio","anuncio","ad name","ad"],
 }
 SKIP_VALS = {"","nan","total de la cuenta","totales","total","reporting ends","informe terminado"}
 
@@ -1314,9 +1317,9 @@ with pg2:
 
         # ── CAMPAÑAS ──────────────────────────────────────────────────────────
         with ma2:
-            camp_reps = [r for r in reports if r["type"] == "Campañas" and r["cols"]["campaign"]]
+            camp_reps = [r for r in reports if r["cols"]["campaign"]]
             if not camp_reps:
-                st.info("Sube reportes a nivel de **Campaña** para ver este análisis.")
+                st.info("No se encontró columna de campañas en los reportes cargados.")
             else:
                 dfs_c = []
                 for r in camp_reps:
@@ -1391,9 +1394,9 @@ with pg2:
 
         # ── PÚBLICOS ──────────────────────────────────────────────────────────
         with ma3:
-            pub_reps = [r for r in reports if r["cols"]["adset"] and r["type"] in ["Públicos","Anuncios"]]
+            pub_reps = [r for r in reports if r["cols"]["adset"]]
             if not pub_reps:
-                st.info("Sube reportes a nivel de **Conjunto de anuncios** para ver este análisis.")
+                st.info("No se encontró columna de conjuntos de anuncios en los reportes cargados.")
             else:
                 dfs_p = []
                 for r in pub_reps:
@@ -1464,9 +1467,9 @@ with pg2:
 
         # ── ANUNCIOS ──────────────────────────────────────────────────────────
         with ma4:
-            ad_reps = [r for r in reports if r["type"] == "Anuncios" and r["cols"]["ad"]]
+            ad_reps = [r for r in reports if r["cols"]["ad"]]
             if not ad_reps:
-                st.info("Sube reportes a nivel de **Anuncio** para ver este análisis.")
+                st.info("No se encontró columna de anuncios en los reportes cargados.")
             else:
                 dfs_a = []
                 for r in ad_reps:
