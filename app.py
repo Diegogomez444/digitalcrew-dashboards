@@ -583,17 +583,22 @@ label[data-testid="stWidgetLabel"] p{{
   /* ── Section labels ── */
   .slabel{{font-size:.54rem!important;margin:1.1rem 0 .7rem 0!important;}}
 
-  /* ── Popovers: fix ícono expand_more ── */
-  [data-testid="stPopover"] button{{
+  /* ── Popovers: ocultar ícono expand_more ── */
+  [data-testid="stPopover"] button,
+  .stPopover button{{
     font-size:.74rem!important;min-height:44px!important;
-    border-radius:10px!important;text-align:left!important;}}
-  /* Forzar icono Material Icons correctamente */
-  [data-testid="stPopover"] button .material-icons,
-  [data-testid="stPopover"] button span[class*="material"]{{
-    font-family:'Material Icons'!important;font-size:1.1rem!important;
-    vertical-align:middle!important;line-height:1!important;}}
-  /* Fallback: si el font no carga, el texto "expand_more" se achica */
-  [data-testid="stPopover"] button p{{
+    border-radius:10px!important;text-align:left!important;overflow:hidden!important;}}
+  [data-testid="stPopover"] button > span,
+  .stPopover button > span,
+  [data-testid="stPopover"] button span[class*="material"],
+  .stPopover button span[class*="material"],
+  [data-testid="stPopover"] button i,
+  .stPopover button i{{
+    display:none!important;visibility:hidden!important;
+    width:0!important;height:0!important;font-size:0!important;
+    overflow:hidden!important;position:absolute!important;}}
+  [data-testid="stPopover"] button p,
+  .stPopover button p{{
     display:inline!important;font-size:.74rem!important;}}
 
   /* ── File uploader ── */
@@ -688,13 +693,19 @@ components.html("""
   function applyFixes(){
     /* 2. Ocultar "expand_more" en botones de popover */
     doc.querySelectorAll('[data-testid="stPopover"] button').forEach(function(btn){
-      btn.querySelectorAll('.material-icons, [class*="material-icon"]').forEach(function(ic){
+      btn.querySelectorAll('[class*="material"]').forEach(function(ic){
         ic.style.setProperty('display','none','important');
       });
       /* Si el botón contiene el texto literal "expand_more", ocultarlo */
       btn.childNodes.forEach(function(node){
         if(node.nodeType===3 && node.textContent.trim()==='expand_more'){
           node.textContent='';
+        }
+      });
+      /* También buscar en elementos hijos anidados */
+      btn.querySelectorAll('*').forEach(function(child){
+        if(child.children.length===0 && child.textContent.trim()==='expand_more'){
+          child.style.setProperty('display','none','important');
         }
       });
     });
