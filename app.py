@@ -999,7 +999,7 @@ with pg1:
     if "de" not in st.session_state: st.session_state.de = max_d
     OPCIONES = {
         "Todo el período":     (min_d, max_d),
-        "Ayer":                (ayer, ayer),
+        "Ayer":                (max_d, max_d),
         "Últimos 3 días":      (max_d - timedelta(days=2), max_d),
         "Últimos 7 días":      (max_d - timedelta(days=6), max_d),
         "Últimos 15 días":     (max_d - timedelta(days=14), max_d),
@@ -1027,11 +1027,6 @@ with pg1:
 
     df  = df_all[(df_all["Fecha"].dt.date >= d_start) & (df_all["Fecha"].dt.date <= d_end)].copy()
     dfv = df[df["Gasto"].notna() & (df["Gasto"] > 0)].copy()
-
-    if len(df) == 0:
-        ultimo = max_d.strftime("%d/%m/%Y")
-        st.info(f"No hay datos disponibles para este período. El último día con datos es **{ultimo}**. Meta Ads suele reportar con 1–2 días de retraso.")
-        st.stop()
 
     def get_delta(col):
         valid = df_all[df_all[col].notna() & (df_all[col] > 0)] if col == "Gasto" else df_all[df_all[col].notna()]
