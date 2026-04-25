@@ -337,6 +337,8 @@ def load_summary():
 
 @st.cache_data(ttl=300)
 def load_daily():
+    from datetime import timezone as _tz
+    _hoy_col = datetime.now(_tz(timedelta(hours=-5))).date()
     raw = fetch_csv(GID_TG)
     hdr = None
     for i, row in raw.iterrows():
@@ -349,7 +351,7 @@ def load_daily():
     skip = {"","nan","Total Ads","Total General","P.Restante","Dias restantes","P.x dia"}
     df = df[df["Fecha"].apply(lambda x: str(x).strip() not in skip)]
     df["Fecha"] = pd.to_datetime(df["Fecha"], dayfirst=True, errors="coerce")
-    df = df[df["Fecha"].notna() & (df["Fecha"].dt.date <= date.today())]
+    df = df[df["Fecha"].notna() & (df["Fecha"].dt.date <= _hoy_col)]
     for c in ["Gasto","CxResultado FB","CxResultado+ TG","CxClic","CxV. Pagina",
               "Ideal Gasto","Gasto Real","Dif Gasto","TG Tracking","Dolar Hoy"]:
         if c in df.columns: df[c] = df[c].apply(parse_cop)
@@ -991,8 +993,10 @@ with pg0:
 with pg1:
 
     # ── FILTRO DE FECHAS ───────────────────────────────────────────────────────
+    from datetime import timezone
+    _hoy_col = datetime.now(timezone(timedelta(hours=-5))).date()  # hora Colombia UTC-5
     min_d = df_all["Fecha"].dt.date.min()
-    ayer  = date.today() - timedelta(days=1)
+    ayer  = _hoy_col - timedelta(days=1)
     max_d = min(df_all["Fecha"].dt.date.max(), ayer)
 
     if "ds" not in st.session_state: st.session_state.ds = min_d
@@ -1027,8 +1031,6 @@ with pg1:
 
     df  = df_all[(df_all["Fecha"].dt.date >= d_start) & (df_all["Fecha"].dt.date <= d_end)].copy()
     dfv = df[df["Gasto"].notna() & (df["Gasto"] > 0)].copy()
-
-    st.caption(f"🔍 DEBUG — df_all fechas: {df_all['Fecha'].dt.date.min()} → {df_all['Fecha'].dt.date.max()} | max_d={max_d} | filtro={d_start}→{d_end} | filas df={len(df)} | filas dfv={len(dfv)}")
 
     def get_delta(col):
         valid = df_all[df_all[col].notna() & (df_all[col] > 0)] if col == "Gasto" else df_all[df_all[col].notna()]
