@@ -1028,6 +1028,8 @@ with pg1:
     df  = df_all[(df_all["Fecha"].dt.date >= d_start) & (df_all["Fecha"].dt.date <= d_end)].copy()
     dfv = df[df["Gasto"].notna() & (df["Gasto"] > 0)].copy()
 
+    st.caption(f"🔍 DEBUG — df_all fechas: {df_all['Fecha'].dt.date.min()} → {df_all['Fecha'].dt.date.max()} | max_d={max_d} | filtro={d_start}→{d_end} | filas df={len(df)} | filas dfv={len(dfv)}")
+
     def get_delta(col):
         valid = df_all[df_all[col].notna() & (df_all[col] > 0)] if col == "Gasto" else df_all[df_all[col].notna()]
         if len(valid) < 6: return None
