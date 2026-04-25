@@ -392,6 +392,7 @@ st.set_page_config(page_title="Digital Crew · Dashboard", page_icon="⚡", layo
 st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/icon?family=Material+Icons');
 *,*::before,*::after{{font-family:'Inter',sans-serif!important;box-sizing:border-box;}}
 .stApp,[data-testid="stAppViewContainer"]{{background:{BG};}}
 [data-testid="stHeader"],[data-testid="stToolbar"]{{background:transparent!important;}}
@@ -493,6 +494,9 @@ label[data-testid="stWidgetLabel"] p{{
   background:{CARD};border:2px dashed {BORDER};border-radius:14px;padding:1rem;}}
 [data-testid="stFileUploader"]:hover{{border-color:{PURPLEL};}}
 
+/* Clase utilitaria: ocultar solo en móvil */
+.mobile-hidden{{display:block;}}
+
 /* ══════════════════════════════════════════════════════
    RESPONSIVE — TABLET  (≤ 900px)
 ══════════════════════════════════════════════════════ */
@@ -520,117 +524,126 @@ label[data-testid="stWidgetLabel"] p{{
 
 /* ══════════════════════════════════════════════════════
    RESPONSIVE — MOBILE  (≤ 640px)
-   Todo apila en una sola columna, tipografía ampliada
 ══════════════════════════════════════════════════════ */
 @media (max-width:640px){{
   /* Contenedor */
-  .block-container{{padding:.9rem .8rem 4rem .8rem!important;max-width:100%!important;}}
+  .block-container{{padding:.85rem .75rem 5rem .75rem!important;max-width:100%!important;overflow-x:hidden!important;}}
 
-  /* Header compacto */
-  .hdr{{flex-direction:column;gap:.35rem;padding-bottom:.8rem;border-bottom-width:1px;}}
-  .hdr-logo{{font-size:1.15rem!important;letter-spacing:.15em!important;}}
-  .hdr-sub{{font-size:.58rem!important;letter-spacing:.15em!important;}}
-  .hdr-dot{{width:7px;height:7px;}}
-  .hdr-right{{font-size:.65rem!important;}}
-  .hdr-right strong{{font-size:.75rem!important;}}
+  /* ── Ocultar en móvil ── */
+  .mobile-hidden{{display:none!important;}}
 
-  /* Tabs: scroll y compactos */
+  /* ── Header: centrado y compacto ── */
+  .hdr{{
+    flex-direction:column;align-items:center;text-align:center;
+    gap:.25rem;padding-bottom:.75rem;border-bottom-width:1px;}}
+  .hdr-logo{{font-size:1.2rem!important;letter-spacing:.18em!important;}}
+  .hdr-sub{{font-size:.57rem!important;letter-spacing:.18em!important;}}
+  .hdr-dot{{width:6px;height:6px;}}
+  .hdr-right{{font-size:.63rem!important;text-align:center!important;}}
+  .hdr-right strong{{font-size:.73rem!important;display:inline!important;}}
+
+  /* ── Botón actualizar: compacto ── */
+  .stButton>button{{
+    font-size:.76rem!important;padding:.55rem .7rem!important;
+    min-height:44px!important;border-radius:12px!important;
+    letter-spacing:.05em!important;}}
+
+  /* ── Tabs: scroll horizontal sin barra ── */
   .stTabs [data-baseweb="tab-list"]{{
     overflow-x:auto!important;flex-wrap:nowrap!important;
     -webkit-overflow-scrolling:touch!important;
-    scrollbar-width:none!important;gap:3px!important;padding:4px 2px!important;}}
+    scrollbar-width:none!important;gap:3px!important;
+    padding:3px 2px!important;}}
   .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar{{display:none;}}
   .stTabs [data-baseweb="tab"]{{
-    font-size:.68rem!important;padding:.4rem .7rem!important;
+    font-size:.67rem!important;padding:.38rem .65rem!important;
     white-space:nowrap!important;min-width:auto!important;}}
 
-  /* ── COLUMNAS ──
-     Por defecto: apila (charts, texto, controles)
-     Bloques de 4 hijos (filas de KPIs): cuadrícula 2×2 */
-  [data-testid="stHorizontalBlock"]{{
-    flex-wrap:wrap!important;gap:.5rem 0!important;}}
+  /* ── COLUMNAS: todo a 100% por defecto ── */
+  [data-testid="stHorizontalBlock"]{{flex-wrap:wrap!important;gap:.45rem 0!important;}}
   [data-testid="column"]{{
     width:100%!important;min-width:100%!important;
-    flex:1 1 100%!important;padding:0!important;}}
-  /* 4-column KPI rows → 2x2 grid (usa :has si el navegador lo soporta) */
+    flex:1 1 100%!important;padding:0!important;box-sizing:border-box!important;}}
+
+  /* Filas de 4 KPIs → cuadrícula 2×2 */
   [data-testid="stHorizontalBlock"]:has(>[data-testid="column"]:nth-child(4))
-    [data-testid="column"]{{
-      min-width:calc(50% - .3rem)!important;
-      flex:1 1 calc(50% - .3rem)!important;width:50%!important;}}
+    >[data-testid="column"]{{
+      min-width:calc(50% - .25rem)!important;width:calc(50% - .25rem)!important;
+      flex:1 1 calc(50% - .25rem)!important;}}
+  /* Filas de 3 KPIs → 2+1 */
+  [data-testid="stHorizontalBlock"]:has(>[data-testid="column"]:nth-child(3)):not(:has(>[data-testid="column"]:nth-child(4)))
+    >[data-testid="column"]{{
+      min-width:calc(50% - .25rem)!important;width:calc(50% - .25rem)!important;
+      flex:1 1 calc(50% - .25rem)!important;}}
 
-  /* KPI cards: más grandes y respirados */
-  .kc{{
-    padding:1rem 1.15rem!important;border-radius:14px!important;
-    margin-bottom:.55rem!important;}}
-  .kc-val{{font-size:1.55rem!important;letter-spacing:-.01em!important;}}
-  .kc-lbl{{font-size:.6rem!important;letter-spacing:.18em!important;margin-bottom:.3rem!important;}}
-  .kc-sub{{font-size:.65rem!important;margin-top:.35rem!important;}}
-  .kc-arr{{font-size:.8rem!important;}}
+  /* ── KPI cards ── */
+  .kc{{padding:1rem 1.1rem!important;border-radius:14px!important;margin-bottom:.5rem!important;}}
+  .kc-val{{font-size:1.45rem!important;letter-spacing:-.01em!important;line-height:1.15!important;}}
+  .kc-lbl{{font-size:.57rem!important;letter-spacing:.16em!important;margin-bottom:.25rem!important;}}
+  .kc-sub{{font-size:.63rem!important;margin-top:.3rem!important;}}
+  .kc-arr{{font-size:.75rem!important;}}
 
-  /* Section labels */
-  .slabel{{font-size:.55rem!important;margin:1.2rem 0 .75rem 0!important;}}
+  /* ── Section labels ── */
+  .slabel{{font-size:.54rem!important;margin:1.1rem 0 .7rem 0!important;}}
 
-  /* Botones touch-friendly */
-  .stButton>button{{
-    font-size:.75rem!important;padding:.55rem .6rem!important;
-    min-height:44px!important;border-radius:10px!important;}}
+  /* ── Popovers: fix ícono expand_more ── */
+  [data-testid="stPopover"] button{{
+    font-size:.74rem!important;min-height:44px!important;
+    border-radius:10px!important;}}
+  [data-testid="stPopover"] button .material-icons,
+  [data-testid="stPopover"] button span[class*="material"]{{
+    font-family:'Material Icons'!important;font-size:1.1rem!important;
+    vertical-align:middle!important;line-height:1!important;}}
 
-  /* Selectbox, inputs */
-  .stSelectbox>div,
-  [data-testid="stDateInput"]{{font-size:.78rem!important;}}
+  /* ── File uploader ── */
+  [data-testid="stFileUploader"]{{padding:.7rem!important;border-radius:12px!important;}}
+  [data-testid="stFileUploader"] p{{font-size:.74rem!important;}}
 
-  /* File uploader */
-  [data-testid="stFileUploader"]{{
-    padding:.75rem!important;border-radius:12px!important;}}
-  [data-testid="stFileUploader"] label{{font-size:.75rem!important;}}
+  /* ── Progress bar pauta ── */
+  .prog-wrap{{padding:.85rem .95rem!important;border-radius:12px!important;}}
+  .prog-title{{font-size:.56rem!important;}}
+  .prog-pct{{font-size:.92rem!important;}}
+  .prog-bar{{height:9px!important;border-radius:5px!important;}}
+  .ps{{font-size:.63rem!important;padding:.38rem!important;}}
 
-  /* Progress bar pauta */
-  .prog-wrap{{padding:.9rem 1rem!important;border-radius:12px!important;}}
-  .prog-title{{font-size:.58rem!important;}}
-  .prog-pct{{font-size:.95rem!important;}}
-  .prog-bar{{height:10px!important;border-radius:5px!important;}}
-  .ps{{font-size:.65rem!important;padding:.4rem!important;}}
+  /* ── DataFrames: scroll horizontal ── */
+  [data-testid="stDataFrame"]{{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;}}
+  [data-testid="stDataFrame"] table{{min-width:460px;font-size:.71rem!important;}}
+  [data-testid="stDataFrame"] th,[data-testid="stDataFrame"] td{{padding:.32rem .45rem!important;}}
 
-  /* DataFrames: scroll horizontal */
-  [data-testid="stDataFrame"]{{overflow-x:auto!important;font-size:.72rem!important;}}
-  [data-testid="stDataFrame"] table{{min-width:480px;}}
-  [data-testid="stDataFrame"] th,
-  [data-testid="stDataFrame"] td{{padding:.35rem .5rem!important;}}
+  /* ── Selectbox e inputs ── */
+  [data-testid="stSelectbox"] div,
+  [data-testid="stDateInput"] input{{font-size:.76rem!important;}}
 
-  /* Plotly: más altura en mobile para que se vean bien */
-  [data-testid="stPlotlyChart"] {{min-height:200px;}}
+  /* ── Expanders ── */
+  [data-testid="stExpander"] summary{{font-size:.76rem!important;min-height:40px!important;}}
 
-  /* Metrics Streamlit nativas */
+  /* ── Textos generales ── */
+  p,li{{font-size:.79rem!important;line-height:1.65!important;}}
+  h1{{font-size:1.25rem!important;}} h2{{font-size:1.05rem!important;}} h3{{font-size:.92rem!important;}}
+
+  /* ── Métricas nativas Streamlit ── */
   [data-testid="stMetric"]{{background:{CARD2};border-radius:12px;padding:.8rem!important;}}
-  [data-testid="stMetricValue"]{{font-size:1.3rem!important;}}
-  [data-testid="stMetricLabel"]{{font-size:.62rem!important;}}
+  [data-testid="stMetricValue"]{{font-size:1.25rem!important;}}
+  [data-testid="stMetricLabel"]{{font-size:.6rem!important;}}
 
-  /* Popovers */
-  [data-testid="stPopover"] button{{font-size:.72rem!important;min-height:42px!important;}}
-
-  /* Expanders */
-  [data-testid="stExpander"] summary{{font-size:.78rem!important;}}
-
-  /* Textos generales */
-  p,li{{font-size:.8rem!important;line-height:1.65!important;}}
-  h1{{font-size:1.3rem!important;}}
-  h2{{font-size:1.1rem!important;}}
-  h3{{font-size:.95rem!important;}}
-
-  /* Ocultar elementos secundarios en mobile */
-  .hdr-right span:first-child{{display:none;}}
+  /* ── Ocultar barra lateral de Streamlit si aparece ── */
+  section[data-testid="stSidebar"]{{display:none!important;}}
 }}
 
 /* ══════════════════════════════════════════════════════
    RESPONSIVE — TELÉFONO PEQUEÑO  (≤ 400px)
 ══════════════════════════════════════════════════════ */
 @media (max-width:400px){{
-  .block-container{{padding:.7rem .6rem 4rem .6rem!important;}}
-  .kc-val{{font-size:1.35rem!important;}}
-  .kc{{padding:.85rem 1rem!important;}}
-  .stTabs [data-baseweb="tab"]{{
-    font-size:.62rem!important;padding:.35rem .55rem!important;}}
-  .hdr-logo{{font-size:1rem!important;letter-spacing:.1em!important;}}
+  .block-container{{padding:.7rem .6rem 5rem .6rem!important;}}
+  .kc-val{{font-size:1.25rem!important;}}
+  .kc{{padding:.85rem .95rem!important;}}
+  .hdr-logo{{font-size:1rem!important;letter-spacing:.12em!important;}}
+  .stTabs [data-baseweb="tab"]{{font-size:.61rem!important;padding:.33rem .52rem!important;}}
+  /* En teléfonos muy pequeños, 3 y 4 cols también van a 100% */
+  [data-testid="stHorizontalBlock"]:has(>[data-testid="column"]:nth-child(3))
+    >[data-testid="column"]{{
+      min-width:100%!important;width:100%!important;flex:1 1 100%!important;}}
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -789,7 +802,7 @@ with pg0:
     lbl_col_r, pop_col_r = st.columns([5, 4])
     with lbl_col_r:
         st.markdown(
-            f"<div style='padding-top:.6rem;font-size:.72rem;color:{MUTED};font-weight:500'>"
+            f"<div class='mobile-hidden' style='padding-top:.6rem;font-size:.72rem;color:{MUTED};font-weight:500'>"
             f"Período analizado: <strong style='color:{CYANL}'>{rango_r}</strong></div>",
             unsafe_allow_html=True)
     with pop_col_r:
