@@ -930,9 +930,11 @@ with pg0:
     if tg and "error" not in tg:
         df_growth_tg = tg.get("df_growth", pd.DataFrame())
         if not df_growth_tg.empty:
+            # Telegram almacena fechas en UTC; convertir a Colombia (UTC-5) para alinear con el filtro
+            _tg_fecha_col = (df_growth_tg["fecha"] - pd.Timedelta(hours=5)).dt.date
             dg_filt = df_growth_tg[
-                (df_growth_tg["fecha"].dt.date >= r_start) &
-                (df_growth_tg["fecha"].dt.date <= r_end)
+                (_tg_fecha_col >= r_start) &
+                (_tg_fecha_col <= r_end)
             ]
             if "entradas" in df_growth_tg.columns:
                 entradas_tg_r = int(dg_filt["entradas"].sum())
