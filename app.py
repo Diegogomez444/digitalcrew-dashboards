@@ -622,6 +622,20 @@ label[data-testid="stWidgetLabel"] p{{
   /* ── Selectbox e inputs ── */
   [data-testid="stSelectbox"] div,
   [data-testid="stDateInput"] input{{font-size:.76rem!important;}}
+  [data-testid="stSelectbox"] > div > div{{
+    background:{CARD2}!important;border:1px solid {BORDER}!important;
+    border-radius:8px!important;color:{WHITE}!important;}}
+  [data-testid="stSelectbox"] > div > div > div{{color:{WHITE}!important;}}
+  [data-testid="stSelectbox"] svg{{fill:{WHITE}!important;}}
+  [data-baseweb="select"] > div{{
+    background:{CARD2}!important;border:1px solid {BORDER}!important;
+    border-radius:8px!important;}}
+  [data-baseweb="select"] span{{color:{WHITE}!important;}}
+  [data-baseweb="popover"] ul{{
+    background:{CARD2}!important;border:1px solid {BORDER}!important;}}
+  [data-baseweb="popover"] li{{
+    background:{CARD2}!important;color:{WHITE}!important;}}
+  [data-baseweb="popover"] li:hover{{background:{BORDER}!important;}}
 
   /* ── Expanders ── */
   [data-testid="stExpander"] summary{{font-size:.76rem!important;min-height:40px!important;}}
